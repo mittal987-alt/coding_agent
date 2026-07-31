@@ -1,0 +1,299 @@
+# configmap.yaml
+# ============================================================
+# Application ConfigMap
+# ============================================================
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ai-platform-config
+  namespace: ai-platform
+
+  labels:
+    app: ai-platform
+
+data:
+
+  ENVIRONMENT: "production"
+
+  LOG_LEVEL: "INFO"
+
+  API_V1_PREFIX: "/api/v1"
+
+  PROJECT_NAME: "AI Software Engineer"
+
+  WORKERS: "4"
+
+  MAX_CONCURRENT_AGENTS: "20"
+
+  MAX_WORKSPACE_SIZE_MB: "10240"
+
+  MAX_UPLOAD_SIZE_MB: "100"
+
+  DEFAULT_LLM_PROVIDER: "openai"
+
+  DEFAULT_EMBEDDING_PROVIDER: "openai"
+
+  ENABLE_RAG: "true"
+
+  ENABLE_VECTOR_SEARCH: "true"
+
+  ENABLE_MEMORY: "true"
+
+  ENABLE_AGENT_SYSTEM: "true"
+
+  ENABLE_METRICS: "true"
+
+  ENABLE_TRACING: "true"
+
+  ENABLE_CACHE: "true"
+
+  ENABLE_GIT: "true"
+
+  ENABLE_WEBHOOKS: "true"
+
+  ENABLE_EXECUTOR: "true"
+
+  EXECUTION_TIMEOUT: "60"
+
+  MAX_EXECUTION_MEMORY_MB: "2048"
+
+  MAX_EXECUTION_CPU_SECONDS: "30"
+
+  CACHE_TTL_SECONDS: "3600"
+
+  REDIS_DB: "0"
+
+  QDRANT_COLLECTION: "documents"
+
+  VECTOR_SIZE: "1536"
+
+  EMBEDDING_BATCH_SIZE: "100"
+
+  JWT_EXPIRE_MINUTES: "1440"
+
+  REFRESH_TOKEN_DAYS: "30"
+
+  CORS_ORIGINS: |
+    https://app.example.com
+    https://admin.example.com
+
+  ALLOWED_HOSTS: |
+    api.example.com
+    localhost
+
+---
+# ============================================================
+# Celery Configuration
+# ============================================================
+
+apiVersion: v1
+kind: ConfigMap
+
+metadata:
+  name: celery-config
+  namespace: ai-platform
+
+data:
+
+  CELERY_TASK_SERIALIZER: "json"
+
+  CELERY_RESULT_SERIALIZER: "json"
+
+  CELERY_ACCEPT_CONTENT: "json"
+
+  CELERY_TIMEZONE: "UTC"
+
+  CELERY_ENABLE_UTC: "true"
+
+  CELERY_PREFETCH_MULTIPLIER: "1"
+
+  CELERY_ACKS_LATE: "true"
+
+  CELERY_TASK_TRACK_STARTED: "true"
+
+  CELERY_WORKER_CONCURRENCY: "4"
+
+---
+# ============================================================
+# Redis Configuration
+# ============================================================
+
+apiVersion: v1
+kind: ConfigMap
+
+metadata:
+  name: redis-config
+  namespace: ai-platform
+
+data:
+
+  redis.conf: |
+
+    appendonly yes
+
+    save 900 1
+
+    save 300 10
+
+    save 60 10000
+
+    maxmemory 2gb
+
+    maxmemory-policy allkeys-lru
+
+    tcp-keepalive 300
+
+---
+# ============================================================
+# PostgreSQL Configuration
+# ============================================================
+
+apiVersion: v1
+kind: ConfigMap
+
+metadata:
+  name: postgres-config
+  namespace: ai-platform
+
+data:
+
+  POSTGRES_INITDB_ARGS: "--encoding=UTF8"
+
+  POSTGRES_SHARED_BUFFERS: "512MB"
+
+  POSTGRES_WORK_MEM: "32MB"
+
+  POSTGRES_MAINTENANCE_WORK_MEM: "256MB"
+
+  POSTGRES_EFFECTIVE_CACHE_SIZE: "2GB"
+
+  POSTGRES_MAX_CONNECTIONS: "200"
+
+---
+# ============================================================
+# Qdrant Configuration
+# ============================================================
+
+apiVersion: v1
+kind: ConfigMap
+
+metadata:
+  name: qdrant-config
+  namespace: ai-platform
+
+data:
+
+  config.yaml: |
+
+    log_level: INFO
+
+    storage:
+
+      storage_path: /qdrant/storage
+
+      snapshots_path: /qdrant/snapshots
+
+      temp_path: /qdrant/temp
+
+    service:
+
+      http_port: 6333
+
+      grpc_port: 6334
+
+    cluster:
+
+      enabled: false
+
+---
+# ============================================================
+# Nginx Configuration
+# ============================================================
+
+apiVersion: v1
+kind: ConfigMap
+
+metadata:
+  name: nginx-config
+  namespace: ai-platform
+
+data:
+
+  nginx.conf: |
+
+    events {}
+
+    http {
+
+      upstream backend {
+
+        server backend-service:8000;
+
+      }
+
+      upstream frontend {
+
+        server frontend-service:3000;
+
+      }
+
+      server {
+
+        listen 80;
+
+        location / {
+
+          proxy_pass http://frontend;
+
+        }
+
+        location /api {
+
+          proxy_pass http://backend;
+
+        }
+
+        location /health {
+
+          proxy_pass http://backend/health;
+
+        }
+
+      }
+
+    }
+
+---
+# ============================================================
+# Feature Flags
+# ============================================================
+
+apiVersion: v1
+kind: ConfigMap
+
+metadata:
+  name: feature-flags
+  namespace: ai-platform
+
+data:
+
+  AGENT_V2: "true"
+
+  STREAMING_RESPONSES: "true"
+
+  AUTO_CODE_REVIEW: "true"
+
+  AUTO_FIX: "true"
+
+  PARALLEL_EXECUTION: "true"
+
+  SMART_CACHE: "true"
+
+  KNOWLEDGE_GRAPH: "false"
+
+  MULTI_AGENT_MODE: "true"
+
+  SELF_HEALING: "true"
+
+  EXPERIMENTAL_TOOLS: "false"

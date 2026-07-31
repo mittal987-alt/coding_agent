@@ -1,0 +1,1016 @@
+# hpa.yaml
+# ============================================================
+# Backend Horizontal Pod Autoscaler
+# ============================================================
+
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+
+metadata:
+
+  name: backend-hpa
+
+  namespace: ai-platform
+
+  labels:
+
+    app: backend
+
+spec:
+
+  scaleTargetRef:
+
+    apiVersion: apps/v1
+
+    kind: Deployment
+
+    name: backend
+
+  minReplicas: 3
+
+  maxReplicas: 20
+
+  metrics:
+
+  - type: Resource
+
+    resource:
+
+      name: cpu
+
+      target:
+
+        type: Utilization
+
+        averageUtilization: 70
+
+  - type: Resource
+
+    resource:
+
+      name: memory
+
+      target:
+
+        type: Utilization
+
+        averageUtilization: 75
+
+  behavior:
+
+    scaleUp:
+
+      stabilizationWindowSeconds: 30
+
+      selectPolicy: Max
+
+      policies:
+
+      - type: Percent
+
+        value: 100
+
+        periodSeconds: 60
+
+      - type: Pods
+
+        value: 4
+
+        periodSeconds: 60
+
+    scaleDown:
+
+      stabilizationWindowSeconds: 300
+
+      selectPolicy: Min
+
+      policies:
+
+      - type: Percent
+
+        value: 20
+
+        periodSeconds: 60
+
+---
+# ============================================================
+# Frontend Horizontal Pod Autoscaler
+# ============================================================
+
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+
+metadata:
+
+  name: frontend-hpa
+
+  namespace: ai-platform
+
+  labels:
+
+    app: frontend
+
+spec:
+
+  scaleTargetRef:
+
+    apiVersion: apps/v1
+
+    kind: Deployment
+
+    name: frontend
+
+  minReplicas: 2
+
+  maxReplicas: 10
+
+  metrics:
+
+  - type: Resource
+
+    resource:
+
+      name: cpu
+
+      target:
+
+        type: Utilization
+
+        averageUtilization: 65
+
+  - type: Resource
+
+    resource:
+
+      name: memory
+
+      target:
+
+        type: Utilization
+
+        averageUtilization: 70
+
+  behavior:
+
+    scaleUp:
+
+      stabilizationWindowSeconds: 30
+
+      selectPolicy: Max
+
+      policies:
+
+      - type: Percent
+
+        value: 100
+
+        periodSeconds: 60
+
+    scaleDown:
+
+      stabilizationWindowSeconds: 300
+
+      selectPolicy: Min
+
+      policies:
+
+      - type: Percent
+
+        value: 25
+
+        periodSeconds: 60
+
+---
+# ============================================================
+# Celery Worker Horizontal Pod Autoscaler
+# ============================================================
+
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+
+metadata:
+
+  name: worker-hpa
+
+  namespace: ai-platform
+
+  labels:
+
+    app: worker
+
+spec:
+
+  scaleTargetRef:
+
+    apiVersion: apps/v1
+
+    kind: Deployment
+
+    name: worker
+
+  minReplicas: 2
+
+  maxReplicas: 15
+
+  metrics:
+
+  - type: Resource
+
+    resource:
+
+      name: cpu
+
+      target:
+
+        type: Utilization
+
+        averageUtilization: 70
+
+  - type: Resource
+
+    resource:
+
+      name: memory
+
+      target:
+
+        type: Utilization
+
+        averageUtilization: 80
+
+  behavior:
+
+    scaleUp:
+
+      stabilizationWindowSeconds: 30
+
+      selectPolicy: Max
+
+      policies:
+
+      - type: Pods
+
+        value: 3
+
+        periodSeconds: 60
+
+    scaleDown:
+
+      stabilizationWindowSeconds: 300
+
+      selectPolicy: Min
+
+      policies:
+
+      - type: Percent
+
+        value: 20
+
+        periodSeconds: 60
+---
+# ============================================================
+# KEDA ScaledObject - Celery Workers
+# ============================================================
+
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+
+metadata:
+
+  name: worker-keda
+
+  namespace: ai-platform
+
+spec:
+
+  scaleTargetRef:
+
+    name: worker
+
+  pollingInterval: 30
+
+  cooldownPeriod: 300
+
+  idleReplicaCount: 1
+
+  minReplicaCount: 2
+
+  maxReplicaCount: 30
+
+  triggers:
+
+    - type: redis
+
+      metadata:
+
+        address: redis-service.ai-platform.svc.cluster.local:6379
+
+        listName: celery
+
+        listLength: "50"
+
+      authenticationRef:
+
+        name: redis-auth
+
+---
+# ============================================================
+# TriggerAuthentication
+# ============================================================
+
+apiVersion: keda.sh/v1alpha1
+kind: TriggerAuthentication
+
+metadata:
+
+  name: redis-auth
+
+  namespace: ai-platform
+
+spec:
+
+  secretTargetRef:
+
+    - parameter: password
+
+      name: redis-secret
+
+      key: REDIS_PASSWORD
+
+---
+# ============================================================
+# AI Inference Worker HPA
+# ============================================================
+
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+
+metadata:
+
+  name: ai-worker-hpa
+
+  namespace: ai-platform
+
+spec:
+
+  scaleTargetRef:
+
+    apiVersion: apps/v1
+
+    kind: Deployment
+
+    name: code-executor
+
+  minReplicas: 2
+
+  maxReplicas: 25
+
+  metrics:
+
+    - type: Resource
+
+      resource:
+
+        name: cpu
+
+        target:
+
+          type: Utilization
+
+          averageUtilization: 75
+
+    - type: Resource
+
+      resource:
+
+        name: memory
+
+        target:
+
+          type: Utilization
+
+          averageUtilization: 80
+
+  behavior:
+
+    scaleUp:
+
+      stabilizationWindowSeconds: 30
+
+      selectPolicy: Max
+
+      policies:
+
+        - type: Percent
+
+          value: 100
+
+          periodSeconds: 60
+
+        - type: Pods
+
+          value: 5
+
+          periodSeconds: 60
+
+    scaleDown:
+
+      stabilizationWindowSeconds: 300
+
+      selectPolicy: Min
+
+      policies:
+
+        - type: Percent
+
+          value: 20
+
+          periodSeconds: 60
+
+---
+# ============================================================
+# Scheduled Scaling (Business Hours)
+# ============================================================
+
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+
+metadata:
+
+  name: backend-business-hours
+
+  namespace: ai-platform
+
+spec:
+
+  scaleTargetRef:
+
+    name: backend
+
+  minReplicaCount: 3
+
+  maxReplicaCount: 20
+
+  triggers:
+
+    - type: cron
+
+      metadata:
+
+        timezone: Asia/Kolkata
+
+        start: "0 09 * * 1-5"
+
+        end: "0 21 * * 1-5"
+
+        desiredReplicas: "8"
+
+---
+# ============================================================
+# Scheduled Scaling (Weekend)
+# ============================================================
+
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+
+metadata:
+
+  name: backend-weekend
+
+  namespace: ai-platform
+
+spec:
+
+  scaleTargetRef:
+
+    name: backend
+
+  minReplicaCount: 2
+
+  maxReplicaCount: 10
+
+  triggers:
+
+    - type: cron
+
+      metadata:
+
+        timezone: Asia/Kolkata
+
+        start: "0 00 * * 6"
+
+        end: "59 23 * * 0"
+
+        desiredReplicas: "3"
+# ============================================================
+# Default Deny All Ingress & Egress
+# ============================================================
+
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+
+metadata:
+  name: default-deny-all
+  namespace: ai-platform
+
+spec:
+
+  podSelector: {}
+
+  policyTypes:
+
+    - Ingress
+    - Egress
+
+---
+# ============================================================
+# Frontend Policy
+# ============================================================
+
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+
+metadata:
+
+  name: frontend-policy
+
+  namespace: ai-platform
+
+spec:
+
+  podSelector:
+
+    matchLabels:
+
+      app: frontend
+
+  policyTypes:
+
+    - Ingress
+    - Egress
+
+  ingress:
+
+    - from:
+
+      - namespaceSelector:
+
+          matchLabels:
+
+            kubernetes.io/metadata.name: ingress
+
+      ports:
+
+      - protocol: TCP
+
+        port: 3000
+
+  egress:
+
+    - to:
+
+      - podSelector:
+
+          matchLabels:
+
+            app: backend
+
+      ports:
+
+      - protocol: TCP
+
+        port: 8000
+
+    - to:
+
+      - namespaceSelector: {}
+
+---
+# ============================================================
+# Backend Policy
+# ============================================================
+
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+
+metadata:
+
+  name: backend-policy
+
+  namespace: ai-platform
+
+spec:
+
+  podSelector:
+
+    matchLabels:
+
+      app: backend
+
+  policyTypes:
+
+    - Ingress
+    - Egress
+
+  ingress:
+
+    - from:
+
+      - podSelector:
+
+          matchLabels:
+
+            app: frontend
+
+      - namespaceSelector:
+
+          matchLabels:
+
+            kubernetes.io/metadata.name: ingress
+
+      ports:
+
+      - protocol: TCP
+
+        port: 8000
+
+  egress:
+
+    # PostgreSQL
+
+    - to:
+
+      - podSelector:
+
+          matchLabels:
+
+            app: postgres
+
+      ports:
+
+      - protocol: TCP
+
+        port: 5432
+
+    # Redis
+
+    - to:
+
+      - podSelector:
+
+          matchLabels:
+
+            app: redis
+
+      ports:
+
+      - protocol: TCP
+
+        port: 6379
+
+    # Qdrant
+
+    - to:
+
+      - podSelector:
+
+          matchLabels:
+
+            app: qdrant
+
+      ports:
+
+      - protocol: TCP
+
+        port: 6333
+
+      - protocol: TCP
+
+        port: 6334
+
+    # DNS
+
+    - to:
+
+      - namespaceSelector:
+
+          matchLabels:
+
+            kubernetes.io/metadata.name: kube-system
+
+      ports:
+
+      - protocol: UDP
+
+        port: 53
+
+      - protocol: TCP
+
+        port: 53
+
+    # HTTPS Internet Access
+
+    - to:
+
+      - ipBlock:
+
+          cidr: 0.0.0.0/0
+
+      ports:
+
+      - protocol: TCP
+
+        port: 443
+
+---
+# ============================================================
+# Worker Policy
+# ============================================================
+
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+
+metadata:
+
+  name: worker-policy
+
+  namespace: ai-platform
+
+spec:
+
+  podSelector:
+
+    matchLabels:
+
+      app: worker
+
+  policyTypes:
+
+    - Ingress
+    - Egress
+
+  egress:
+
+    - to:
+
+      - podSelector:
+
+          matchLabels:
+
+            app: redis
+
+      ports:
+
+      - protocol: TCP
+
+        port: 6379
+
+    - to:
+
+      - podSelector:
+
+          matchLabels:
+
+            app: postgres
+
+      ports:
+
+      - protocol: TCP
+
+        port: 5432
+
+    - to:
+
+      - podSelector:
+
+          matchLabels:
+
+            app: qdrant
+
+      ports:
+
+      - protocol: TCP
+
+        port: 6333
+
+---
+# ============================================================
+# Database Policy
+# ============================================================
+
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+
+metadata:
+
+  name: postgres-policy
+
+  namespace: ai-platform
+
+spec:
+
+  podSelector:
+
+    matchLabels:
+
+      app: postgres
+
+  policyTypes:
+
+    - Ingress
+
+  ingress:
+
+    - from:
+
+      - podSelector:
+
+          matchLabels:
+
+            app: backend
+
+      - podSelector:
+
+          matchLabels:
+
+            app: worker
+
+      ports:
+
+      - protocol: TCP
+
+        port: 5432
+
+---
+# ============================================================
+# Redis Policy
+# ============================================================
+
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+
+metadata:
+
+  name: redis-policy
+
+  namespace: ai-platform
+
+spec:
+
+  podSelector:
+
+    matchLabels:
+
+      app: redis
+
+  policyTypes:
+
+    - Ingress
+
+  ingress:
+
+    - from:
+
+      - podSelector:
+
+          matchLabels:
+
+            app: backend
+
+      - podSelector:
+
+          matchLabels:
+
+            app: worker
+
+      ports:
+
+      - protocol: TCP
+
+        port: 6379
+
+---
+# ============================================================
+# Qdrant Policy
+# ============================================================
+
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+
+metadata:
+
+  name: qdrant-policy
+
+  namespace: ai-platform
+
+spec:
+
+  podSelector:
+
+    matchLabels:
+
+      app: qdrant
+
+  policyTypes:
+
+    - Ingress
+
+  ingress:
+
+    - from:
+
+      - podSelector:
+
+          matchLabels:
+
+            app: backend
+
+      - podSelector:
+
+          matchLabels:
+
+            app: worker
+
+      ports:
+
+      - protocol: TCP
+
+        port: 6333
+
+      - protocol: TCP
+
+        port: 6334
+
+---
+# ============================================================
+# Monitoring Access
+# ============================================================
+
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+
+metadata:
+
+  name: monitoring-policy
+
+  namespace: ai-platform
+
+spec:
+
+  podSelector: {}
+
+  policyTypes:
+
+    - Ingress
+
+  ingress:
+
+    - from:
+
+      - namespaceSelector:
+
+          matchLabels:
+
+            kubernetes.io/metadata.name: monitoring
+
+---
+# ============================================================
+# Allow DNS
+# ============================================================
+
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+
+metadata:
+
+  name: allow-dns
+
+  namespace: ai-platform
+
+spec:
+
+  podSelector: {}
+
+  policyTypes:
+
+    - Egress
+
+  egress:
+
+    - to:
+
+      - namespaceSelector:
+
+          matchLabels:
+
+            kubernetes.io/metadata.name: kube-system
+
+      ports:
+
+      - protocol: UDP
+
+        port: 53
+
+      - protocol: TCP
+
+        port: 53

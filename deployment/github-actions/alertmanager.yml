@@ -1,0 +1,217 @@
+##############################################################
+# Global Configuration
+##############################################################
+
+global:
+
+  resolve_timeout: 5m
+
+  smtp_smarthost: smtp.gmail.com:587
+
+  smtp_from: alerts@example.com
+
+  smtp_auth_username: alerts@example.com
+
+  smtp_auth_password: ${SMTP_PASSWORD}
+
+  smtp_require_tls: true
+
+##############################################################
+# Templates
+##############################################################
+
+templates:
+
+  - /etc/alertmanager/templates/*.tmpl
+
+##############################################################
+# Routing
+##############################################################
+
+route:
+
+  receiver: default
+
+  group_by:
+    - alertname
+    - cluster
+    - namespace
+
+  group_wait: 30s
+
+  group_interval: 5m
+
+  repeat_interval: 4h
+
+  routes:
+
+##############################################################
+# Critical Alerts
+##############################################################
+
+    - matchers:
+
+        - severity="critical"
+
+      receiver: critical
+
+      continue: true
+
+##############################################################
+# Warning Alerts
+##############################################################
+
+    - matchers:
+
+        - severity="warning"
+
+      receiver: warning
+
+##############################################################
+# Receivers
+##############################################################
+
+receivers:
+
+##############################################################
+# Default
+##############################################################
+
+  - name: default
+
+    email_configs:
+
+      - to: devops@example.com
+
+        send_resolved: true
+
+##############################################################
+# Critical
+##############################################################
+
+  - name: critical
+
+    email_configs:
+
+      - to: oncall@example.com
+
+        send_resolved: true
+
+    slack_configs:
+
+      - api_url: ${SLACK_WEBHOOK}
+
+        channel: "#critical-alerts"
+
+        send_resolved: true
+
+        title: "[CRITICAL] {{ .CommonLabels.alertname }}"
+
+        text: |
+          Summary: {{ .CommonAnnotations.summary }}
+
+          Description: {{ .CommonAnnotations.description }}
+
+##############################################################
+# Warning
+##############################################################
+
+  - name: warning
+
+    email_configs:
+
+      - to: devops@example.com
+
+        send_resolved: true
+
+##############################################################
+# Microsoft Teams
+##############################################################
+
+  - name: teams
+
+    webhook_configs:
+
+      - url: ${TEAMS_WEBHOOK}
+
+        send_resolved: true
+
+##############################################################
+# Inhibition Rules
+##############################################################
+
+inhibit_rules:
+
+  - source_matchers:
+
+      - severity="critical"
+
+    target_matchers:
+
+      - severity="warning"
+
+    equal:
+
+      - alertname
+
+      - namespace
+
+##############################################################
+# Mute Time Intervals
+##############################################################
+
+mute_time_intervals:
+
+  - name: maintenance
+
+    time_intervals:
+
+      - weekdays:
+
+          - saturday
+
+          - sunday
+
+        times:
+
+          - start_time: "00:00"
+
+            end_time: "06:00"
+
+##############################################################
+# Timezone
+##############################################################
+
+time_intervals:
+
+  - name: business-hours
+
+    time_intervals:
+
+      - weekdays:
+
+          - monday
+          - tuesday
+          - wednesday
+          - thursday
+          - friday
+
+        times:
+
+          - start_time: "09:00"
+
+            end_time: "18:00"
+
+##############################################################
+# Notification Settings
+##############################################################
+
+receivers:
+
+  - name: heartbeat
+
+    webhook_configs:
+
+      - url: http://healthcheck:8080/heartbeat
+
+        send_resolved: false

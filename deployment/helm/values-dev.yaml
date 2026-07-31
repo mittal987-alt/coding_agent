@@ -1,0 +1,279 @@
+ # ============================================================
+# Development Values
+# ============================================================
+
+global:
+
+  environment: development
+
+  storageClass: standard
+
+  timezone: Asia/Kolkata
+
+# ============================================================
+# Images
+# ============================================================
+
+images:
+
+  backend:
+
+    repository: ai-platform/backend
+
+    tag: dev
+
+    pullPolicy: Always
+
+  frontend:
+
+    repository: ai-platform/frontend
+
+    tag: dev
+
+    pullPolicy: Always
+
+  worker:
+
+    repository: ai-platform/worker
+
+    tag: dev
+
+    pullPolicy: Always
+
+  codeExecutor:
+
+    repository: ai-platform/code-executor
+
+    tag: dev
+
+    pullPolicy: Always
+
+# ============================================================
+# Backend
+# ============================================================
+
+backend:
+
+  replicaCount: 1
+
+  resources:
+
+    requests:
+
+      cpu: 250m
+
+      memory: 512Mi
+
+    limits:
+
+      cpu: "1"
+
+      memory: 1Gi
+
+  autoscaling:
+
+    enabled: false
+
+# ============================================================
+# Frontend
+# ============================================================
+
+frontend:
+
+  replicaCount: 1
+
+  resources:
+
+    requests:
+
+      cpu: 100m
+
+      memory: 256Mi
+
+    limits:
+
+      cpu: 500m
+
+      memory: 512Mi
+
+  autoscaling:
+
+    enabled: false
+
+# ============================================================
+# Worker
+# ============================================================
+
+worker:
+
+  replicaCount: 1
+
+  concurrency: 2
+
+  autoscaling:
+
+    enabled: false
+
+# ============================================================
+# Code Executor
+# ============================================================
+
+codeExecutor:
+
+  replicaCount: 1
+
+  executionTimeout: 120
+
+  memoryLimitMB: 1024
+
+# ============================================================
+# PostgreSQL
+# ============================================================
+
+postgresql:
+
+  enabled: true
+
+  primary:
+
+    persistence:
+
+      size: 10Gi
+
+# ============================================================
+# Redis
+# ============================================================
+
+redis:
+
+  enabled: true
+
+  master:
+
+    persistence:
+
+      size: 5Gi
+
+# ============================================================
+# Qdrant
+# ============================================================
+
+qdrant:
+
+  enabled: true
+
+  persistence:
+
+    size: 20Gi
+
+# ============================================================
+# Ingress
+# ============================================================
+
+ingress:
+
+  enabled: true
+
+  className: nginx
+
+  hosts:
+
+    - host: ai.local
+
+      paths:
+
+        - path: /
+
+          pathType: Prefix
+
+# ============================================================
+# Monitoring
+# ============================================================
+
+monitoring:
+
+  enabled: false
+
+# ============================================================
+# Logging
+# ============================================================
+
+logging:
+
+  level: DEBUG
+
+# ============================================================
+# AI Providers
+# ============================================================
+
+llm:
+
+  provider: ollama
+
+  embeddingProvider: ollama
+
+# ============================================================
+# Feature Flags
+# ============================================================
+
+features:
+
+  telemetry: false
+
+  usageAnalytics: false
+
+# ============================================================
+# Backup
+# ============================================================
+
+backup:
+
+  enabled: false
+
+# ============================================================
+# Network Policy
+# ============================================================
+
+networkPolicy:
+
+  enabled: false
+
+# ============================================================
+# Development Environment
+# ============================================================
+
+env:
+
+  APP_ENV: development
+
+  LOG_LEVEL: DEBUG
+
+  RELOAD: "true"
+
+  DEBUG: "true"
+
+  CORS_ORIGINS:
+
+    - http://localhost:3000
+
+    - http://127.0.0.1:3000
+
+    - http://localhost:5173
+
+# ============================================================
+# Scheduling
+# ============================================================
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}
+
+commonLabels:
+
+  environment: development
+
+commonAnnotations:
+
+  environment: development

@@ -1,0 +1,524 @@
+{{- if .Values.backend.enabled }}
+
+# ============================================================
+# Backend ConfigMap
+# ============================================================
+
+apiVersion: v1
+kind: ConfigMap
+
+metadata:
+
+  name: {{ include "ai-platform.configMapName" . }}
+
+  namespace: {{ include "ai-platform.namespace" . }}
+
+  labels:
+
+{{ include "ai-platform.labels" . | indent 4 }}
+
+data:
+
+  APP_ENV: {{ .Values.global.environment | quote }}
+
+  LOG_LEVEL: {{ .Values.logging.level | quote }}
+
+  API_PREFIX: {{ .Values.env.API_PREFIX | quote }}
+
+  TZ: {{ .Values.global.timezone | quote }}
+
+  ENABLE_METRICS: "true"
+
+  ENABLE_TRACING: "true"
+
+  ENABLE_REQUEST_LOGGING: "true"
+
+  ENABLE_SWAGGER: "true"
+
+  ENABLE_OPENAPI: "true"
+
+  ENABLE_WEBSOCKET: {{ .Values.features.websocket | quote }}
+
+  ENABLE_RAG: {{ .Values.features.rag | quote }}
+
+  ENABLE_AI_CHAT: {{ .Values.features.aiChat | quote }}
+
+  ENABLE_CODE_EXECUTION: {{ .Values.features.codeExecution | quote }}
+
+  ENABLE_SEMANTIC_SEARCH: {{ .Values.features.semanticSearch | quote }}
+
+  ENABLE_USAGE_ANALYTICS: {{ .Values.features.usageAnalytics | quote }}
+
+  ENABLE_TELEMETRY: {{ .Values.features.telemetry | quote }}
+
+  LLM_PROVIDER: {{ .Values.llm.provider | quote }}
+
+  EMBEDDING_PROVIDER: {{ .Values.llm.embeddingProvider | quote }}
+
+  FALLBACK_PROVIDER: {{ .Values.llm.fallbackProvider | quote }}
+
+  REQUEST_TIMEOUT: {{ .Values.llm.requestTimeout | quote }}
+
+  MAX_RETRIES: {{ .Values.llm.maxRetries | quote }}
+
+  WORKERS: {{ .Values.env.WORKERS | default "4" | quote }}
+
+---
+# ============================================================
+# Feature Flags
+# ============================================================
+
+apiVersion: v1
+kind: ConfigMap
+
+metadata:
+
+  name: {{ include "ai-platform.fullname" . }}-features
+
+  namespace: {{ include "ai-platform.namespace" . }}
+
+  labels:
+
+{{ include "ai-platform.labels" . | indent 4 }}
+
+data:
+
+  rag: {{ .Values.features.rag | quote }}
+
+  semantic-search: {{ .Values.features.semanticSearch | quote }}
+
+  ai-chat: {{ .Values.features.aiChat | quote }}
+
+  websocket: {{ .Values.features.websocket | quote }}
+
+  code-execution: {{ .Values.features.codeExecution | quote }}
+
+  github-integration: {{ .Values.features.githubIntegration | quote }}
+
+  gitlab-integration: {{ .Values.features.gitlabIntegration | quote }}
+
+  telemetry: {{ .Values.features.telemetry | quote }}
+
+{{- end }}
+---
+# ============================================================
+# Database Configuration
+# ============================================================
+
+apiVersion: v1
+kind: ConfigMap
+
+metadata:
+
+  name: {{ include "ai-platform.fullname" . }}-database
+
+  namespace: {{ include "ai-platform.namespace" . }}
+
+  labels:
+
+{{ include "ai-platform.labels" . | indent 4 }}
+
+data:
+
+  DB_HOST: {{ include "ai-platform.fullname" . }}-postgres
+
+  DB_PORT: "5432"
+
+  DB_NAME: app
+
+  DB_POOL_SIZE: "30"
+
+  DB_MAX_OVERFLOW: "20"
+
+  DB_POOL_TIMEOUT: "30"
+
+  DB_POOL_RECYCLE: "1800"
+
+---
+# ============================================================
+# Redis Configuration
+# ============================================================
+
+apiVersion: v1
+kind: ConfigMap
+
+metadata:
+
+  name: {{ include "ai-platform.fullname" . }}-redis
+
+  namespace: {{ include "ai-platform.namespace" . }}
+
+  labels:
+
+{{ include "ai-platform.labels" . | indent 4 }}
+
+data:
+
+  REDIS_HOST: {{ include "ai-platform.fullname" . }}-redis-master
+
+  REDIS_PORT: "6379"
+
+  REDIS_DB: "0"
+
+  CACHE_TTL: "3600"
+
+  SESSION_TTL: "86400"
+
+---
+# ============================================================
+# Vector Database Configuration
+# ============================================================
+
+apiVersion: v1
+kind: ConfigMap
+
+metadata:
+
+  name: {{ include "ai-platform.fullname" . }}-qdrant
+
+  namespace: {{ include "ai-platform.namespace" . }}
+
+  labels:
+
+{{ include "ai-platform.labels" . | indent 4 }}
+
+data:
+
+  QDRANT_HOST: {{ include "ai-platform.fullname" . }}-qdrant
+
+  QDRANT_PORT: "6333"
+
+  COLLECTION_NAME: embeddings
+
+  VECTOR_SIZE: "1536"
+
+  DISTANCE_METRIC: Cosine
+
+---
+# ============================================================
+# Logging Configuration
+# ============================================================
+
+apiVersion: v1
+kind: ConfigMap
+
+metadata:
+
+  name: {{ include "ai-platform.fullname" . }}-logging
+
+  namespace: {{ include "ai-platform.namespace" . }}
+
+  labels:
+
+{{ include "ai-platform.labels" . | indent 4 }}
+
+data:
+
+  LOG_FORMAT: json
+
+  LOG_LEVEL: {{ .Values.logging.level | quote }}
+
+  ENABLE_ACCESS_LOGS: "true"
+
+  ENABLE_REQUEST_ID: "true"
+
+  ENABLE_STRUCTURED_LOGGING: "true"
+
+---
+# ============================================================
+# Monitoring Configuration
+# ============================================================
+
+apiVersion: v1
+kind: ConfigMap
+
+metadata:
+
+  name: {{ include "ai-platform.fullname" . }}-monitoring
+
+  namespace: {{ include "ai-platform.namespace" . }}
+
+  labels:
+
+{{ include "ai-platform.labels" . | indent 4 }}
+
+data:
+
+  METRICS_ENABLED: "true"
+
+  METRICS_PATH: /metrics
+
+  HEALTH_PATH: /health
+
+  READINESS_PATH: /ready
+
+  LIVENESS_PATH: /live
+
+  ENABLE_PROMETHEUS: "true"
+
+---
+# ============================================================
+# SMTP Configuration
+# ============================================================
+
+apiVersion: v1
+kind: ConfigMap
+
+metadata:
+
+  name: {{ include "ai-platform.fullname" . }}-smtp
+
+  namespace: {{ include "ai-platform.namespace" . }}
+
+  labels:
+
+{{ include "ai-platform.labels" . | indent 4 }}
+
+data:
+
+  SMTP_HOST: {{ .Values.smtp.host | quote }}
+
+  SMTP_PORT: {{ .Values.smtp.port | quote }}
+
+  SMTP_TLS: {{ .Values.smtp.tls | quote }}
+
+  SMTP_FROM: {{ .Values.smtp.from | quote }}
+
+---
+# ============================================================
+# Git Provider Configuration
+# ============================================================
+
+apiVersion: v1
+kind: ConfigMap
+
+metadata:
+
+  name: {{ include "ai-platform.fullname" . }}-git
+
+  namespace: {{ include "ai-platform.namespace" . }}
+
+  labels:
+
+{{ include "ai-platform.labels" . | indent 4 }}
+
+data:
+
+  GITHUB_ENABLED: {{ .Values.git.github.enabled | quote }}
+
+  GITLAB_ENABLED: {{ .Values.git.gitlab.enabled | quote }}
+
+---
+# ============================================================
+# AI Configuration
+# ============================================================
+
+apiVersion: v1
+kind: ConfigMap
+
+metadata:
+
+  name: {{ include "ai-platform.fullname" . }}-ai
+
+  namespace: {{ include "ai-platform.namespace" . }}
+
+  labels:
+
+{{ include "ai-platform.labels" . | indent 4 }}
+
+data:
+
+  DEFAULT_PROVIDER: {{ .Values.llm.provider | quote }}
+
+  EMBEDDING_PROVIDER: {{ .Values.llm.embeddingProvider | quote }}
+
+  FALLBACK_PROVIDER: {{ .Values.llm.fallbackProvider | quote }}
+
+  MAX_RETRIES: {{ .Values.llm.maxRetries | quote }}
+
+  REQUEST_TIMEOUT: {{ .Values.llm.requestTimeout | quote }}
+  ---
+# ============================================================
+# Frontend Runtime Configuration
+# ============================================================
+
+apiVersion: v1
+kind: ConfigMap
+
+metadata:
+
+  name: {{ include "ai-platform.fullname" . }}-frontend
+
+  namespace: {{ include "ai-platform.namespace" . }}
+
+  labels:
+
+{{ include "ai-platform.labels" . | indent 4 }}
+
+data:
+
+  NEXT_PUBLIC_API_URL: "https://api.example.com"
+
+  NEXT_PUBLIC_WS_URL: "wss://api.example.com"
+
+  NEXT_PUBLIC_APP_NAME: "AI Software Engineer"
+
+  NEXT_PUBLIC_ENVIRONMENT: {{ .Values.global.environment | quote }}
+
+  NEXT_PUBLIC_ENABLE_ANALYTICS: "true"
+
+  NEXT_PUBLIC_ENABLE_AI_CHAT: {{ .Values.features.aiChat | quote }}
+
+  NEXT_PUBLIC_ENABLE_RAG: {{ .Values.features.rag | quote }}
+
+  NEXT_PUBLIC_ENABLE_CODE_EXECUTION: {{ .Values.features.codeExecution | quote }}
+
+---
+# ============================================================
+# CORS Configuration
+# ============================================================
+
+apiVersion: v1
+kind: ConfigMap
+
+metadata:
+
+  name: {{ include "ai-platform.fullname" . }}-cors
+
+  namespace: {{ include "ai-platform.namespace" . }}
+
+  labels:
+
+{{ include "ai-platform.labels" . | indent 4 }}
+
+data:
+
+  ALLOWED_ORIGINS: {{ join "," .Values.env.CORS_ORIGINS | quote }}
+
+  ALLOWED_METHODS: "GET,POST,PUT,PATCH,DELETE,OPTIONS"
+
+  ALLOWED_HEADERS: "Authorization,Content-Type,X-Requested-With"
+
+  EXPOSE_HEADERS: "Content-Disposition"
+
+  ALLOW_CREDENTIALS: "true"
+
+---
+# ============================================================
+# Worker Configuration
+# ============================================================
+
+apiVersion: v1
+kind: ConfigMap
+
+metadata:
+
+  name: {{ include "ai-platform.fullname" . }}-worker
+
+  namespace: {{ include "ai-platform.namespace" . }}
+
+  labels:
+
+{{ include "ai-platform.labels" . | indent 4 }}
+
+data:
+
+  WORKER_CONCURRENCY: {{ .Values.worker.concurrency | quote }}
+
+  QUEUE_NAME: "default"
+
+  MAX_RETRIES: "5"
+
+  RETRY_DELAY: "30"
+
+  PREFETCH_COUNT: "10"
+
+---
+# ============================================================
+# Code Execution Configuration
+# ============================================================
+
+apiVersion: v1
+kind: ConfigMap
+
+metadata:
+
+  name: {{ include "ai-platform.fullname" . }}-executor
+
+  namespace: {{ include "ai-platform.namespace" . }}
+
+  labels:
+
+{{ include "ai-platform.labels" . | indent 4 }}
+
+data:
+
+  EXECUTION_TIMEOUT: {{ .Values.codeExecutor.timeout | quote }}
+
+  MEMORY_LIMIT_MB: {{ .Values.codeExecutor.memoryLimitMB | quote }}
+
+  WORKSPACE_SIZE: {{ .Values.codeExecutor.workspaceSize | quote }}
+
+  SANDBOX_ENABLED: "true"
+
+  NETWORK_ACCESS: "false"
+
+  MAX_OUTPUT_SIZE: "1048576"
+
+---
+# ============================================================
+# Resource Defaults
+# ============================================================
+
+apiVersion: v1
+kind: ConfigMap
+
+metadata:
+
+  name: {{ include "ai-platform.fullname" . }}-resources
+
+  namespace: {{ include "ai-platform.namespace" . }}
+
+  labels:
+
+{{ include "ai-platform.labels" . | indent 4 }}
+
+data:
+
+  DEFAULT_CPU_REQUEST: "500m"
+
+  DEFAULT_MEMORY_REQUEST: "512Mi"
+
+  DEFAULT_CPU_LIMIT: "2"
+
+  DEFAULT_MEMORY_LIMIT: "2Gi"
+
+---
+# ============================================================
+# Service Discovery
+# ============================================================
+
+apiVersion: v1
+kind: ConfigMap
+
+metadata:
+
+  name: {{ include "ai-platform.fullname" . }}-services
+
+  namespace: {{ include "ai-platform.namespace" . }}
+
+  labels:
+
+{{ include "ai-platform.labels" . | indent 4 }}
+
+data:
+
+  BACKEND_SERVICE: {{ include "ai-platform.backend.service" . }}
+
+  FRONTEND_SERVICE: {{ include "ai-platform.frontend.service" . }}
+
+  POSTGRES_SERVICE: {{ include "ai-platform.fullname" . }}-postgres
+
+  REDIS_SERVICE: {{ include "ai-platform.fullname" . }}-redis
+
+  QDRANT_SERVICE: {{ include "ai-platform.fullname" . }}-qdrant

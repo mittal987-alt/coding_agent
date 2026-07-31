@@ -1,0 +1,873 @@
+# backend-deployment.yaml
+# ============================================================
+# Service Account
+# ============================================================
+
+apiVersion: v1
+kind: ServiceAccount
+
+metadata:
+  name: backend-service-account
+  namespace: ai-platform
+
+  labels:
+    app: backend
+
+automountServiceAccountToken: true
+
+---
+# ============================================================
+# Role
+# ============================================================
+
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+
+metadata:
+  name: backend-role
+  namespace: ai-platform
+
+rules:
+
+- apiGroups: [""]
+
+  resources:
+    - pods
+    - services
+    - configmaps
+    - secrets
+
+  verbs:
+    - get
+    - list
+    - watch
+
+- apiGroups:
+    - apps
+
+  resources:
+    - deployments
+
+  verbs:
+    - get
+    - list
+
+---
+# ============================================================
+# Role Binding
+# ============================================================
+
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+
+metadata:
+  name: backend-rolebinding
+  namespace: ai-platform
+
+subjects:
+
+- kind: ServiceAccount
+
+  name: backend-service-account
+
+roleRef:
+
+  apiGroup: rbac.authorization.k8s.io
+
+  kind: Role
+
+  name: backend-role
+
+---
+# ============================================================
+# Backend Deployment
+# ============================================================
+
+apiVersion: apps/v1
+kind: Deployment
+
+metadata:
+
+  name: backend
+
+  namespace: ai-platform
+
+  labels:
+
+    app: backend
+
+    component: api
+
+    version: v1
+
+spec:
+
+  replicas: 3
+
+  revisionHistoryLimit: 10
+
+  progressDeadlineSeconds: 600
+
+  strategy:
+
+    type: RollingUpdate
+
+    rollingUpdate:
+
+      maxSurge: 1
+
+      maxUnavailable: 0
+
+  selector:
+
+    matchLabels:
+
+      app: backend
+
+  template:
+
+    metadata:
+
+      labels:
+
+        app: backend
+
+        component: api
+
+      annotations:
+
+        prometheus.io/scrape: "true"
+
+        prometheus.io/path: "/metrics"
+
+        prometheus.io/port: "8000"
+
+    spec:
+
+      serviceAccountName: backend-service-account
+
+      priorityClassName: high-priority
+
+      terminationGracePeriodSeconds: 60
+
+      dnsPolicy: ClusterFirst
+
+      restartPolicy: Always
+
+      securityContext:
+
+        fsGroup: 1000
+
+        runAsNonRoot: true
+
+        runAsUser: 1000
+
+        runAsGroup: 1000
+
+      topologySpreadConstraints:
+
+      - maxSkew: 1
+
+        topologyKey: kubernetes.io/hostname
+
+        whenUnsatisfiable: ScheduleAnyway
+
+        labelSelector:
+
+          matchLabels:
+
+            app: backend
+
+      affinity:
+
+        podAntiAffinity:
+
+          preferredDuringSchedulingIgnoredDuringExecution:
+
+          - weight: 100
+
+            podAffinityTerm:
+
+              topologyKey: kubernetes.io/hostname
+
+              labelSelector:
+
+                matchExpressions:
+
+                - key: app
+
+                  operator: In
+
+                  values:
+
+                  - backend
+
+      nodeAffinity:
+
+        preferredDuringSchedulingIgnoredDuringExecution:
+
+        - weight: 50
+
+          preference:
+
+            matchExpressions:
+
+            - key: node-role.kubernetes.io/worker
+
+              operator: Exists
+
+      tolerations:
+
+      - key: "workload"
+
+        operator: "Equal"
+
+        value: "backend"
+
+        effect: "NoSchedule"
+
+      imagePullSecrets:
+
+      - name: docker-registry-secret
+
+      initContainers:
+
+      - name: wait-for-postgres
+
+        image: postgres:16
+
+        command:
+
+        - sh
+
+        - -c
+
+        - |
+
+          until pg_isready \
+            -h postgres-service \
+            -U postgres
+          do
+            echo waiting...
+            sleep 2
+          done
+
+      - name: wait-for-redis
+
+        image: redis:7-alpine
+
+        command:
+
+        - sh
+
+        - -c
+
+        - |
+
+          until redis-cli \
+            -h redis-service \
+            ping
+          do
+            sleep 2
+          done
+
+      - name: wait-for-qdrant
+
+        image: curlimages/curl
+
+        command:
+
+        - sh
+
+        - -c
+
+        - |
+
+          until curl \
+            -fs \
+            http://qdrant-service:6333/healthz
+          do
+            sleep 2
+          done
+      containers:
+
+      - name: backend
+
+        image: your-docker-registry/ai-backend:latest
+
+        imagePullPolicy: Always
+
+        ports:
+
+        - name: http
+          containerPort: 8000
+          protocol: TCP
+
+        - name: metrics
+          containerPort: 9090
+          protocol: TCP
+
+        envFrom:
+
+        - configMapRef:
+            name: ai-platform-config
+
+        - secretRef:
+            name: ai-platform-secrets
+
+        env:
+
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: ai-platform-secrets
+              key: DATABASE_URL
+
+        - name: REDIS_URL
+          valueFrom:
+            secretKeyRef:
+              name: ai-platform-secrets
+              key: REDIS_URL
+
+        - name: JWT_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: ai-platform-secrets
+              key: JWT_SECRET_KEY
+
+        - name: OPENAI_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: llm-provider-secrets
+              key: OPENAI_API_KEY
+
+        - name: ANTHROPIC_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: llm-provider-secrets
+              key: ANTHROPIC_API_KEY
+
+        - name: GOOGLE_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: llm-provider-secrets
+              key: GOOGLE_API_KEY
+
+        - name: MISTRAL_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: llm-provider-secrets
+              key: MISTRAL_API_KEY
+
+        - name: GROQ_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: llm-provider-secrets
+              key: GROQ_API_KEY
+
+        - name: QDRANT_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: qdrant-secret
+              key: QDRANT_API_KEY
+
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+
+        - name: NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+
+        - name: POD_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+
+        volumeMounts:
+
+        - name: logs
+          mountPath: /app/logs
+
+        - name: uploads
+          mountPath: /app/uploads
+
+        - name: cache
+          mountPath: /app/cache
+
+        - name: tmp
+          mountPath: /tmp
+
+        - name: config-volume
+          mountPath: /app/config
+          readOnly: true
+
+        resources:
+
+          requests:
+
+            cpu: "500m"
+
+            memory: "1Gi"
+
+          limits:
+
+            cpu: "2"
+
+            memory: "4Gi"
+
+        startupProbe:
+
+          httpGet:
+
+            path: /health/startup
+
+            port: http
+
+          failureThreshold: 30
+
+          periodSeconds: 10
+
+          timeoutSeconds: 5
+
+        readinessProbe:
+
+          httpGet:
+
+            path: /health/ready
+
+            port: http
+
+          initialDelaySeconds: 10
+
+          periodSeconds: 10
+
+          timeoutSeconds: 5
+
+          failureThreshold: 3
+
+          successThreshold: 1
+
+        livenessProbe:
+
+          httpGet:
+
+            path: /health/live
+
+            port: http
+
+          initialDelaySeconds: 30
+
+          periodSeconds: 20
+
+          timeoutSeconds: 5
+
+          failureThreshold: 5
+
+        lifecycle:
+
+          preStop:
+
+            exec:
+
+              command:
+
+              - sh
+
+              - -c
+
+              - |
+
+                echo "Waiting for requests to finish..."
+
+                sleep 20
+
+        securityContext:
+
+          allowPrivilegeEscalation: false
+
+          readOnlyRootFilesystem: false
+
+          capabilities:
+
+            drop:
+
+            - ALL
+
+        terminationMessagePath: /dev/termination-log
+
+        terminationMessagePolicy: File
+
+      volumes:
+
+      - name: logs
+
+        emptyDir: {}
+
+      - name: uploads
+
+        persistentVolumeClaim:
+
+          claimName: uploads-pvc
+
+      - name: cache
+
+        emptyDir:
+
+          sizeLimit: 2Gi
+
+      - name: tmp
+
+        emptyDir: {}
+
+      - name: config-volume
+
+        configMap:
+
+          name: ai-platform-config
+---
+# ============================================================
+# Backend Service
+# ============================================================
+
+apiVersion: v1
+kind: Service
+
+metadata:
+
+  name: backend-service
+
+  namespace: ai-platform
+
+  labels:
+
+    app: backend
+
+  annotations:
+
+    prometheus.io/scrape: "true"
+
+    prometheus.io/port: "9090"
+
+spec:
+
+  type: ClusterIP
+
+  selector:
+
+    app: backend
+
+  ports:
+
+  - name: http
+
+    protocol: TCP
+
+    port: 8000
+
+    targetPort: http
+
+  - name: metrics
+
+    protocol: TCP
+
+    port: 9090
+
+    targetPort: metrics
+
+---
+# ============================================================
+# Pod Disruption Budget
+# ============================================================
+
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+
+metadata:
+
+  name: backend-pdb
+
+  namespace: ai-platform
+
+spec:
+
+  minAvailable: 2
+
+  selector:
+
+    matchLabels:
+
+      app: backend
+
+---
+# ============================================================
+# Horizontal Pod Autoscaler
+# ============================================================
+
+apiVersion: autoscaling/v2
+
+kind: HorizontalPodAutoscaler
+
+metadata:
+
+  name: backend-hpa
+
+  namespace: ai-platform
+
+spec:
+
+  scaleTargetRef:
+
+    apiVersion: apps/v1
+
+    kind: Deployment
+
+    name: backend
+
+  minReplicas: 3
+
+  maxReplicas: 15
+
+  behavior:
+
+    scaleUp:
+
+      stabilizationWindowSeconds: 60
+
+      policies:
+
+      - type: Percent
+
+        value: 100
+
+        periodSeconds: 60
+
+      selectPolicy: Max
+
+    scaleDown:
+
+      stabilizationWindowSeconds: 300
+
+      policies:
+
+      - type: Percent
+
+        value: 20
+
+        periodSeconds: 60
+
+      selectPolicy: Min
+
+  metrics:
+
+  - type: Resource
+
+    resource:
+
+      name: cpu
+
+      target:
+
+        type: Utilization
+
+        averageUtilization: 70
+
+  - type: Resource
+
+    resource:
+
+      name: memory
+
+      target:
+
+        type: Utilization
+
+        averageUtilization: 75
+
+---
+# ============================================================
+# Pod Monitor
+# ============================================================
+
+apiVersion: monitoring.coreos.com/v1
+
+kind: PodMonitor
+
+metadata:
+
+  name: backend-monitor
+
+  namespace: monitoring
+
+  labels:
+
+    release: prometheus
+
+spec:
+
+  namespaceSelector:
+
+    matchNames:
+
+      - ai-platform
+
+  selector:
+
+    matchLabels:
+
+      app: backend
+
+  podMetricsEndpoints:
+
+  - port: metrics
+
+    path: /metrics
+
+    interval: 15s
+
+    scrapeTimeout: 10s
+
+---
+# ============================================================
+# Backend Network Policy
+# ============================================================
+
+apiVersion: networking.k8s.io/v1
+
+kind: NetworkPolicy
+
+metadata:
+
+  name: backend-policy
+
+  namespace: ai-platform
+
+spec:
+
+  podSelector:
+
+    matchLabels:
+
+      app: backend
+
+  policyTypes:
+
+  - Ingress
+
+  - Egress
+
+  ingress:
+
+  - from:
+
+    - namespaceSelector:
+
+        matchLabels:
+
+          kubernetes.io/metadata.name: ingress
+
+    - podSelector:
+
+        matchLabels:
+
+          app: frontend
+
+    ports:
+
+    - protocol: TCP
+
+      port: 8000
+
+  egress:
+
+  - to:
+
+    - podSelector:
+
+        matchLabels:
+
+          app: postgres
+
+    ports:
+
+    - protocol: TCP
+
+      port: 5432
+
+  - to:
+
+    - podSelector:
+
+        matchLabels:
+
+          app: redis
+
+    ports:
+
+    - protocol: TCP
+
+      port: 6379
+
+  - to:
+
+    - podSelector:
+
+        matchLabels:
+
+          app: qdrant
+
+    ports:
+
+    - protocol: TCP
+
+      port: 6333
+
+  - to:
+
+    - namespaceSelector: {}
+
+---
+# ============================================================
+# Backend Service Monitor (Optional)
+# ============================================================
+
+apiVersion: monitoring.coreos.com/v1
+
+kind: ServiceMonitor
+
+metadata:
+
+  name: backend-service-monitor
+
+  namespace: monitoring
+
+spec:
+
+  namespaceSelector:
+
+    matchNames:
+
+    - ai-platform
+
+  selector:
+
+    matchLabels:
+
+      app: backend
+
+  endpoints:
+
+  - port: metrics
+
+    path: /metrics
+
+    interval: 15s
+
+    honorLabels: true

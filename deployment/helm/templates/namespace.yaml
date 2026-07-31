@@ -1,0 +1,28 @@
+{{- if .Values.namespace.create }}
+
+apiVersion: v1
+kind: Namespace
+
+metadata:
+
+  name: {{ include "ai-platform.namespace" . }}
+
+  labels:
+
+{{ include "ai-platform.labels" . | indent 4 }}
+
+    app.kubernetes.io/component: namespace
+
+    environment: {{ .Values.global.environment }}
+
+  annotations:
+
+{{ include "ai-platform.annotations" . | indent 4 }}
+
+    meta.helm.sh/release-name: {{ .Release.Name }}
+
+    meta.helm.sh/release-namespace: {{ .Release.Namespace }}
+
+spec: {}
+
+{{- end }}  

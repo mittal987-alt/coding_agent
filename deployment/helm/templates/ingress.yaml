@@ -1,0 +1,182 @@
+{{- if .Values.ingress.enabled }}
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+
+metadata:
+
+  name: {{ include "ai-platform.ingressName" . }}
+
+  namespace: {{ include "ai-platform.namespace" . }}
+
+  labels:
+
+{{ include "ai-platform.labels" . | indent 4 }}
+
+  annotations:
+
+{{ include "ai-platform.annotations" . | indent 4 }}
+
+    kubernetes.io/ingress.class: {{ .Values.ingress.className | quote }}
+
+    cert-manager.io/cluster-issuer: {{ .Values.ingress.clusterIssuer | quote }}
+
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
+
+    nginx.ingress.kubernetes.io/proxy-body-size: "100m"
+
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "600"
+
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "600"
+
+    nginx.ingress.kubernetes.io/enable-cors: "true"
+
+    nginx.ingress.kubernetes.io/cors-allow-origin: "*"
+
+    nginx.ingress.kubernetes.io/cors-allow-methods: "GET,POST,PUT,PATCH,DELETE,OPTIONS"
+
+    nginx.ingress.kubernetes.io/cors-allow-headers: "Authorization,Content-Type"
+
+    nginx.ingress.kubernetes.io/use-regex: "true"
+
+spec:
+
+  ingressClassName: {{ .Values.ingress.className }}
+
+  tls:
+
+{{- range .Values.ingress.tls }}
+
+    - hosts:
+
+{{- range .hosts }}
+
+        - {{ . }}
+
+{{- end }}
+
+      secretName: {{ .secretName }}
+
+{{- end }}
+
+  rules:
+
+{{- range .Values.ingress.hosts }}
+
+    - host: {{ .host }}
+
+      http:
+
+        paths:
+{{- range .paths }}
+
+          - path: {{ .path }}
+
+            pathType: {{ .pathType | default "Prefix" }}
+
+            backend:
+
+              service:
+
+                name:
+
+{{- if eq .service "backend" }}
+
+                  {{ include "ai-platform.backend.service" $ }}
+
+{{- else if eq .service "frontend" }}
+
+                  {{ include "ai-platform.frontend.service" $ }}
+
+{{- else }}
+
+                  {{ .service }}
+
+{{- end }}
+
+                port:
+
+                  number: {{ .port }}
+
+{{- end }}
+
+{{- end }}
+
+{{- if .Values.ingress.defaultBackend.enabled }}
+
+  defaultBackend:
+
+    service:
+
+      name: {{ include "ai-platform.frontend.service" . }}
+
+      port:
+
+        number: 3000
+
+{{- end }}
+
+{{- if .Values.ingress.enableWebSocket }}
+
+---
+apiVersion: networking.k8s.io/v1
+
+kind: Ingress
+
+metadata:
+
+  name: {{ include "ai-platform.ingressName" . }}-websocket
+
+  namespace: {{ include "ai-platform.namespace" . }}
+
+  annotations:
+
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "60"
+
+    nginx.ingress.kubernetes.io/websocket-services: {{ include "ai-platform.backend.service" . }}
+
+    nginx.ingress.kubernetes.io/server-snippets: |
+
+      add_header X-Frame-Options "DENY" always;
+      add_header X-Content-Type-Options "nosniff" always;
+      add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+
+    nginx.ingress.kubernetes.io/limit-rps: "100"
+
+    nginx.ingress.kubernetes.io/limit-connections: "50"
+
+spec:
+
+  ingressClassName: {{ .Values.ingress.className }}
+
+  rules:
+
+    - host: {{ (index .Values.ingress.hosts 0).host }}
+
+      http:
+
+        paths:
+
+          - path: /ws
+
+            pathType: Prefix
+
+            backend:
+
+              service:
+
+                name: {{ include "ai-platform.backend.service" . }}
+
+                port:
+
+                  number: 8000
+
+{{- end }}

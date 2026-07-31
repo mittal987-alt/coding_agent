@@ -1,0 +1,188 @@
+# namespace.yaml
+# ============================================================
+# Namespace
+# AI Software Engineer Platform
+# ============================================================
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ai-platform
+
+  labels:
+    app.kubernetes.io/name: ai-platform
+    app.kubernetes.io/component: platform
+    app.kubernetes.io/managed-by: kubernetes
+    environment: production
+
+---
+# ============================================================
+# Monitoring Namespace
+# ============================================================
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: monitoring
+
+  labels:
+    app.kubernetes.io/name: monitoring
+    app.kubernetes.io/component: observability
+    environment: production
+
+---
+# ============================================================
+# Logging Namespace
+# ============================================================
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: logging
+
+  labels:
+    app.kubernetes.io/name: logging
+    app.kubernetes.io/component: logging
+    environment: production
+
+---
+# ============================================================
+# Ingress Namespace
+# ============================================================
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ingress
+
+  labels:
+    app.kubernetes.io/name: ingress
+    app.kubernetes.io/component: networking
+    environment: production
+
+---
+# ============================================================
+# AI Models Namespace
+# ============================================================
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ai-models
+
+  labels:
+    app.kubernetes.io/name: ai-models
+    app.kubernetes.io/component: inference
+    environment: production
+
+---
+# ============================================================
+# Batch Processing Namespace
+# ============================================================
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: batch
+
+  labels:
+    app.kubernetes.io/name: batch
+    app.kubernetes.io/component: workers
+    environment: production
+
+---
+# ============================================================
+# Resource Quota
+# ============================================================
+
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: ai-platform-quota
+  namespace: ai-platform
+
+spec:
+  hard:
+    requests.cpu: "20"
+    requests.memory: 40Gi
+    limits.cpu: "40"
+    limits.memory: 80Gi
+
+    persistentvolumeclaims: "20"
+
+    pods: "150"
+
+    services: "50"
+
+    secrets: "100"
+
+    configmaps: "100"
+
+---
+# ============================================================
+# Limit Range
+# ============================================================
+
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: ai-platform-limits
+  namespace: ai-platform
+
+spec:
+  limits:
+
+    - type: Container
+
+      default:
+        cpu: "1"
+        memory: 1Gi
+
+      defaultRequest:
+        cpu: 250m
+        memory: 256Mi
+
+      max:
+        cpu: "8"
+        memory: 16Gi
+
+      min:
+        cpu: 100m
+        memory: 128Mi
+
+---
+# ============================================================
+# Priority Classes
+# ============================================================
+
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: critical-priority
+
+value: 1000000
+globalDefault: false
+
+description: Critical backend services
+
+---
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: high-priority
+
+value: 500000
+globalDefault: false
+
+description: Important services
+
+---
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: normal-priority
+
+value: 100000
+globalDefault: true
+
+description: Default application priority

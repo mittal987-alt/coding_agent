@@ -1,0 +1,246 @@
+name: Frontend CI/CD
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "frontend/**"
+      - ".github/workflows/frontend.yml"
+
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "frontend/**"
+
+permissions:
+  contents: read
+  packages: write
+  id-token: write
+
+env:
+  NODE_VERSION: "22"
+  AWS_REGION: ap-south-1
+  ECR_REPOSITORY: ai-platform/frontend
+
+##############################################################
+# Jobs
+##############################################################
+
+jobs:
+
+##############################################################
+# Code Quality
+##############################################################
+
+  quality:
+
+    name: Frontend Quality
+
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: ESLint
+        run: npm run lint
+
+      - name: Type Check
+        run: npm run type-check
+
+      - name: Format Check
+        run: npm run format:check
+
+##############################################################
+# Unit Tests
+##############################################################
+
+  tests:
+
+    name: Unit Tests
+
+    runs-on: ubuntu-latest
+
+    needs: quality
+
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install Packages
+        run: npm ci
+
+      - name: Run Tests
+        run: |
+          npm run test -- \
+            --coverage
+
+      - name: Upload Coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-coverage
+          path: frontend/coverage
+
+##############################################################
+# Production Build
+##############################################################
+
+  build:
+
+    name: Production Build
+
+    runs-on: ubuntu-latest
+
+    needs: tests
+
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install Packages
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Upload Build
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-build
+          path: frontend/dist
+
+##############################################################
+# Docker
+##############################################################
+
+  docker:
+
+    name: Build Docker Image
+
+    runs-on: ubuntu-latest
+
+    needs: build
+
+    steps:
+
+      - uses: actions/checkout@v4
+
+      - name: Build Docker Image
+        run: |
+          docker build \
+            -t frontend:${{ github.sha }} \
+            ./frontend
+
+      - name: Save Docker Image
+        run: |
+          docker save \
+            frontend:${{ github.sha }} \
+            > frontend-image.tar
+
+      - name: Upload Docker Image
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-image
+          path: frontend-image.tar
+
+##############################################################
+# Publish to Amazon ECR
+##############################################################
+
+  publish:
+
+    name: Publish Frontend Image
+
+    if: github.ref == 'refs/heads/main'
+
+    runs-on: ubuntu-latest
+
+    needs: docker
+
+    steps:
+
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ env.AWS_REGION }}
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+
+      - name: Login to Amazon ECR
+        id: login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build Image
+        run: |
+          docker build \
+            -t ${{ env.ECR_REPOSITORY }}:${{ github.sha }} \
+            ./frontend
+
+      - name: Tag Image
+        run: |
+          docker tag \
+          ${{ env.ECR_REPOSITORY }}:${{ github.sha }} \
+          ${{ steps.login.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
+
+      - name: Push Image
+        run: |
+          docker push \
+          ${{ steps.login.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
+
+##############################################################
+# Completion
+##############################################################
+
+  completed:
+
+    name: Frontend Pipeline Complete
+
+    runs-on: ubuntu-latest
+
+    needs:
+      - publish
+
+    if: always()
+
+    steps:
+
+      - name: Finished
+        run: echo "Frontend CI/CD completed successfully."

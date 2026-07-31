@@ -1,0 +1,298 @@
+# docker-compose.prod.yml
+version: "3.9"
+
+name: ai-software-engineer-prod
+
+services:
+
+# ============================================================
+# Backend API
+# ============================================================
+
+  backend:
+
+    container_name: ai-backend
+
+    build:
+      context: ../../
+      dockerfile: deployment/docker/Dockerfile.backend
+
+    restart: always
+
+    env_file:
+      - ../../backend/.env.production
+
+    environment:
+      ENVIRONMENT: production
+      LOG_LEVEL: INFO
+      WORKERS: 4
+
+    expose:
+      - "8000"
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+      redis:
+        condition: service_healthy
+
+      qdrant:
+        condition: service_healthy
+
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 4G
+        reservations:
+          cpus: "1"
+          memory: 2G
+
+    networks:
+      - backend-network
+
+# ============================================================
+# Celery Worker
+# ============================================================
+
+  worker:
+
+    container_name: ai-worker
+
+    build:
+      context: ../../
+      dockerfile: deployment/docker/Dockerfile.worker
+
+    restart: always
+
+    env_file:
+      - ../../backend/.env.production
+
+    environment:
+      ENVIRONMENT: production
+
+    depends_on:
+      redis:
+        condition: service_healthy
+
+      postgres:
+        condition: service_healthy
+
+    deploy:
+      replicas: 2
+
+      resources:
+        limits:
+          cpus: "2"
+          memory: 4G
+
+    networks:
+      - backend-network
+
+# ============================================================
+# Frontend
+# ============================================================
+
+  frontend:
+
+    container_name: ai-frontend
+
+    build:
+      context: ../../
+      dockerfile: deployment/docker/Dockerfile.frontend
+
+    restart: always
+
+    expose:
+      - "3000"
+
+    depends_on:
+      - backend
+
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: 1G
+
+    networks:
+      - backend-network
+
+# ============================================================
+# PostgreSQL
+# ============================================================
+
+  postgres:
+
+    image: postgres:16
+
+    container_name: postgres
+
+    restart: always
+
+    environment:
+      POSTGRES_DB: ai_engineer
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+
+    volumes:
+      - postgres_prod:/var/lib/postgresql/data
+
+    healthcheck:
+      test: ["CMD-SHELL","pg_isready -U postgres"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+
+    networks:
+      - backend-network
+
+# ============================================================
+# Redis
+# ============================================================
+
+  redis:
+
+    image: redis:7-alpine
+
+    container_name: redis
+
+    restart: always
+
+    command:
+      - redis-server
+      - --appendonly
+      - "yes"
+
+    volumes:
+      - redis_prod:/data
+
+    healthcheck:
+      test: ["CMD","redis-cli","ping"]
+      interval: 15s
+      retries: 5
+
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+
+    networks:
+      - backend-network
+
+# ============================================================
+# Qdrant
+# ============================================================
+
+  qdrant:
+
+    build:
+      context: ../../
+      dockerfile: deployment/docker/Dockerfile.vectordb
+
+    restart: always
+
+    volumes:
+      - qdrant_prod:/qdrant/storage
+
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "wget",
+          "--spider",
+          "http://localhost:6333/healthz"
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+    networks:
+      - backend-network
+
+# ============================================================
+# Nginx Reverse Proxy
+# ============================================================
+
+  nginx:
+
+    image: nginx:stable-alpine
+
+    container_name: nginx
+
+    restart: always
+
+    depends_on:
+      - backend
+      - frontend
+
+    ports:
+      - "80:80"
+      - "443:443"
+
+    volumes:
+      - ../nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ../nginx/ssl:/etc/nginx/ssl:ro
+      - nginx_logs:/var/log/nginx
+
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+    networks:
+      - backend-network
+
+# ============================================================
+# Auto Restart
+# ============================================================
+
+  watchtower:
+
+    image: containrrr/watchtower
+
+    container_name: watchtower
+
+    restart: always
+
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+
+    command:
+      --cleanup
+      --interval
+      300
+
+# ============================================================
+# Networks
+# ============================================================
+
+networks:
+
+  backend-network:
+    driver: bridge
+
+# ============================================================
+# Volumes
+# ============================================================
+
+volumes:
+
+  postgres_prod:
+
+  redis_prod:
+
+  qdrant_prod:
+
+  nginx_logs:

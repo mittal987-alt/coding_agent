@@ -1,0 +1,76 @@
+# Chart.yaml
+apiVersion: v2
+
+name: ai-software-engineer
+
+description: >
+  Production-grade AI Software Engineer Platform
+  with FastAPI, Next.js, PostgreSQL, Redis,
+  Qdrant, Celery, Kubernetes and Monitoring.
+
+type: application
+
+version: 1.0.0
+
+appVersion: "1.0.0"
+
+kubeVersion: ">=1.30.0-0"
+
+home: https://github.com/your-org/ai-software-engineer
+
+sources:
+
+  - https://github.com/your-org/ai-software-engineer
+
+keywords:
+
+  - ai
+  - llm
+  - rag
+  - fastapi
+  - nextjs
+  - kubernetes
+  - qdrant
+  - postgres
+  - redis
+  - celery
+
+maintainers:
+
+  - name: AI Platform Team
+
+    email: team@example.com
+
+icon: https://raw.githubusercontent.com/cncf/artwork/main/projects/helm/icon/color/helm-icon-color.png
+
+dependencies:
+
+  - name: postgresql
+
+    version: "16.3.0"
+
+    repository: "https://charts.bitnami.com/bitnami"
+
+    condition: postgresql.enabled
+
+  - name: redis
+
+    version: "20.6.2"
+
+    repository: "https://charts.bitnami.com/bitnami"
+
+    condition: redis.enabled
+
+  - name: qdrant
+
+    version: "1.12.5"
+
+    repository: "https://qdrant.github.io/qdrant-helm"
+
+    condition: qdrant.enabled
+
+annotations:
+
+  category: AI Platform
+
+  licenses: Apache-2.0

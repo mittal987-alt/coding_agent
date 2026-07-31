@@ -1,0 +1,751 @@
+# values.yaml
+# ============================================================
+# Global Configuration
+# ============================================================
+
+global:
+
+  nameOverride: ""
+
+  fullnameOverride: ""
+
+  environment: production
+
+  imagePullSecrets:
+
+    - docker-registry-secret
+
+  storageClass: standard
+
+  timezone: Asia/Kolkata
+
+# ============================================================
+# Images
+# ============================================================
+
+images:
+
+  backend:
+
+    repository: ghcr.io/your-org/ai-platform-backend
+
+    tag: latest
+
+    pullPolicy: IfNotPresent
+
+  frontend:
+
+    repository: ghcr.io/your-org/ai-platform-frontend
+
+    tag: latest
+
+    pullPolicy: IfNotPresent
+
+  worker:
+
+    repository: ghcr.io/your-org/ai-platform-worker
+
+    tag: latest
+
+    pullPolicy: IfNotPresent
+
+  codeExecutor:
+
+    repository: ghcr.io/your-org/code-executor
+
+    tag: latest
+
+    pullPolicy: IfNotPresent
+
+# ============================================================
+# Backend
+# ============================================================
+
+backend:
+
+  enabled: true
+
+  replicaCount: 3
+
+  service:
+
+    type: ClusterIP
+
+    port: 8000
+
+  resources:
+
+    requests:
+
+      cpu: 500m
+
+      memory: 1Gi
+
+    limits:
+
+      cpu: "2"
+
+      memory: 4Gi
+
+  autoscaling:
+
+    enabled: true
+
+    minReplicas: 3
+
+    maxReplicas: 20
+
+    targetCPUUtilizationPercentage: 70
+
+    targetMemoryUtilizationPercentage: 75
+
+# ============================================================
+# Frontend
+# ============================================================
+
+frontend:
+
+  enabled: true
+
+  replicaCount: 2
+
+  service:
+
+    type: ClusterIP
+
+    port: 3000
+
+  resources:
+
+    requests:
+
+      cpu: 250m
+
+      memory: 512Mi
+
+    limits:
+
+      cpu: "1"
+
+      memory: 2Gi
+
+  autoscaling:
+
+    enabled: true
+
+    minReplicas: 2
+
+    maxReplicas: 10
+
+    targetCPUUtilizationPercentage: 65
+
+    targetMemoryUtilizationPercentage: 70
+  # ============================================================
+# PostgreSQL
+# ============================================================
+
+postgresql:
+
+  enabled: true
+
+  auth:
+
+    database: ai_platform
+
+    username: postgres
+
+    existingSecret: postgres-secret
+
+    secretKeys:
+
+      adminPasswordKey: POSTGRES_PASSWORD
+
+  primary:
+
+    persistence:
+
+      enabled: true
+
+      storageClass: standard
+
+      size: 100Gi
+
+    resources:
+
+      requests:
+
+        cpu: 500m
+
+        memory: 1Gi
+
+      limits:
+
+        cpu: "2"
+
+        memory: 4Gi
+
+    podSecurityContext:
+
+      fsGroup: 999
+
+    containerSecurityContext:
+
+      runAsUser: 999
+
+      runAsNonRoot: true
+
+# ============================================================
+# Redis
+# ============================================================
+
+redis:
+
+  enabled: true
+
+  architecture: standalone
+
+  auth:
+
+    enabled: true
+
+    existingSecret: redis-secret
+
+    existingSecretPasswordKey: REDIS_PASSWORD
+
+  master:
+
+    persistence:
+
+      enabled: true
+
+      storageClass: standard
+
+      size: 20Gi
+
+    resources:
+
+      requests:
+
+        cpu: 250m
+
+        memory: 512Mi
+
+      limits:
+
+        cpu: "1"
+
+        memory: 2Gi
+
+# ============================================================
+# Qdrant
+# ============================================================
+
+qdrant:
+
+  enabled: true
+
+  replicaCount: 1
+
+  persistence:
+
+    enabled: true
+
+    storageClass: standard
+
+    size: 200Gi
+
+  service:
+
+    httpPort: 6333
+
+    grpcPort: 6334
+
+  resources:
+
+    requests:
+
+      cpu: 500m
+
+      memory: 2Gi
+
+    limits:
+
+      cpu: "4"
+
+      memory: 8Gi
+
+# ============================================================
+# Celery Worker
+# ============================================================
+
+worker:
+
+  enabled: true
+
+  replicaCount: 2
+
+  concurrency: 4
+
+  resources:
+
+    requests:
+
+      cpu: 500m
+
+      memory: 1Gi
+
+    limits:
+
+      cpu: "2"
+
+      memory: 4Gi
+
+  autoscaling:
+
+    enabled: true
+
+    minReplicas: 2
+
+    maxReplicas: 15
+
+# ============================================================
+# Code Executor
+# ============================================================
+
+codeExecutor:
+
+  enabled: true
+
+  replicaCount: 2
+
+  executionTimeout: 60
+
+  memoryLimitMB: 2048
+
+  cpuLimitSeconds: 30
+
+  workspaceSize: 5Gi
+
+  resources:
+
+    requests:
+
+      cpu: "1"
+
+      memory: 2Gi
+
+    limits:
+
+      cpu: "4"
+
+      memory: 8Gi
+
+# ============================================================
+# Persistence
+# ============================================================
+
+persistence:
+
+  enabled: true
+
+  storageClass: standard
+
+  accessMode: ReadWriteOnce
+
+  backup:
+
+    enabled: true
+
+    retentionDays: 30
+
+    schedule: "0 2 * * *"
+    # ============================================================
+# Ingress
+# ============================================================
+
+ingress:
+
+  enabled: true
+
+  className: nginx
+
+  annotations:
+
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+
+    nginx.ingress.kubernetes.io/proxy-body-size: "500m"
+
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+
+    nginx.ingress.kubernetes.io/enable-cors: "true"
+
+    nginx.ingress.kubernetes.io/cors-allow-credentials: "true"
+
+  hosts:
+
+    - host: app.example.com
+
+      paths:
+
+        - path: /
+
+          pathType: Prefix
+
+    - host: api.example.com
+
+      paths:
+
+        - path: /
+
+          pathType: Prefix
+
+  tls:
+
+    - secretName: ai-platform-tls
+
+      hosts:
+
+        - app.example.com
+
+        - api.example.com
+
+# ============================================================
+# Monitoring
+# ============================================================
+
+monitoring:
+
+  enabled: true
+
+  serviceMonitor:
+
+    enabled: true
+
+    interval: 30s
+
+    scrapeTimeout: 10s
+
+  prometheus:
+
+    enabled: true
+
+    retention: 30d
+
+    storage: 100Gi
+
+  grafana:
+
+    enabled: true
+
+    adminExistingSecret: grafana-secret
+
+    persistence:
+
+      enabled: true
+
+      size: 20Gi
+
+# ============================================================
+# Logging
+# ============================================================
+
+logging:
+
+  level: INFO
+
+  format: json
+
+  loki:
+
+    enabled: true
+
+  promtail:
+
+    enabled: true
+
+  tracing:
+
+    enabled: true
+
+    provider: tempo
+
+# ============================================================
+# Horizontal Pod Autoscaling
+# ============================================================
+
+autoscaling:
+
+  enabled: true
+
+  behavior:
+
+    scaleUp:
+
+      stabilizationWindowSeconds: 30
+
+    scaleDown:
+
+      stabilizationWindowSeconds: 300
+
+# ============================================================
+# KEDA
+# ============================================================
+
+keda:
+
+  enabled: true
+
+  pollingInterval: 30
+
+  cooldownPeriod: 300
+
+  maxReplicaCount: 30
+
+# ============================================================
+# Network Policies
+# ============================================================
+
+networkPolicy:
+
+  enabled: true
+
+  defaultDeny: true
+
+  allowDNS: true
+
+  allowMonitoring: true
+
+# ============================================================
+# Security
+# ============================================================
+
+security:
+
+  podSecurityContext:
+
+    runAsNonRoot: true
+
+    fsGroup: 1000
+
+  containerSecurityContext:
+
+    allowPrivilegeEscalation: false
+
+    readOnlyRootFilesystem: false
+
+    capabilities:
+
+      drop:
+
+        - ALL
+
+  seccompProfile:
+
+    type: RuntimeDefault
+  # ============================================================
+# Environment Variables
+# ============================================================
+
+env:
+
+  APP_ENV: production
+
+  LOG_LEVEL: INFO
+
+  API_PREFIX: /api/v1
+
+  TZ: Asia/Kolkata
+
+  CORS_ORIGINS:
+
+    - https://app.example.com
+
+    - https://admin.example.com
+
+# ============================================================
+# Secrets
+# ============================================================
+
+secrets:
+
+  existingSecret: ai-platform-secrets
+
+  databaseUrlKey: DATABASE_URL
+
+  redisUrlKey: REDIS_URL
+
+  jwtSecretKey: JWT_SECRET
+
+  sessionSecretKey: SESSION_SECRET
+
+  encryptionKey: ENCRYPTION_KEY
+
+# ============================================================
+# AI / LLM Providers
+# ============================================================
+
+llm:
+
+  provider: openai
+
+  embeddingProvider: openai
+
+  fallbackProvider: mistral
+
+  providers:
+
+    openai:
+
+      enabled: true
+
+      existingSecret: llm-provider-secrets
+
+      apiKeyKey: OPENAI_API_KEY
+
+    anthropic:
+
+      enabled: false
+
+      existingSecret: llm-provider-secrets
+
+      apiKeyKey: ANTHROPIC_API_KEY
+
+    google:
+
+      enabled: false
+
+      existingSecret: llm-provider-secrets
+
+      apiKeyKey: GOOGLE_API_KEY
+
+    mistral:
+
+      enabled: true
+
+      existingSecret: llm-provider-secrets
+
+      apiKeyKey: MISTRAL_API_KEY
+
+    groq:
+
+      enabled: false
+
+      existingSecret: llm-provider-secrets
+
+      apiKeyKey: GROQ_API_KEY
+
+# ============================================================
+# Feature Flags
+# ============================================================
+
+features:
+
+  rag: true
+
+  semanticSearch: true
+
+  aiChat: true
+
+  codeExecution: true
+
+  websocket: true
+
+  githubIntegration: true
+
+  gitlabIntegration: true
+
+  usageAnalytics: true
+
+  telemetry: false
+
+# ============================================================
+# SMTP
+# ============================================================
+
+smtp:
+
+  enabled: true
+
+  existingSecret: smtp-secret
+
+  host: smtp.example.com
+
+  port: 587
+
+  usernameKey: SMTP_USERNAME
+
+  passwordKey: SMTP_PASSWORD
+
+  from: noreply@example.com
+
+# ============================================================
+# Git Integrations
+# ============================================================
+
+git:
+
+  github:
+
+    enabled: true
+
+    existingSecret: github-secret
+
+  gitlab:
+
+    enabled: true
+
+    existingSecret: gitlab-secret
+
+# ============================================================
+# Backup
+# ============================================================
+
+backup:
+
+  enabled: true
+
+  schedule: "0 2 * * *"
+
+  retentionDays: 30
+
+  compression: gzip
+
+# ============================================================
+# Scheduling
+# ============================================================
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}
+
+# ============================================================
+# Common Labels
+# ============================================================
+
+commonLabels:
+
+  app.kubernetes.io/name: ai-software-engineer
+
+  app.kubernetes.io/component: platform
+
+  app.kubernetes.io/managed-by: Helm
+
+# ============================================================
+# Common Annotations
+# ============================================================
+
+commonAnnotations:
+
+  prometheus.io/scrape: "true"
+
+  prometheus.io/path: /metrics
+
+  prometheus.io/port: "8000"

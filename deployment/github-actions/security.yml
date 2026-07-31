@@ -1,0 +1,237 @@
+name: Security Pipeline
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+
+  pull_request:
+    branches:
+      - main
+
+  schedule:
+    # Every Monday at 02:00 UTC
+    - cron: "0 2 * * 1"
+
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+  security-events: write
+  packages: read
+
+env:
+  PYTHON_VERSION: "3.12"
+  NODE_VERSION: "22"
+
+##############################################################
+# Jobs
+##############################################################
+
+jobs:
+
+##############################################################
+# CodeQL
+##############################################################
+
+  codeql:
+
+    name: CodeQL Analysis
+
+    runs-on: ubuntu-latest
+
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+
+    strategy:
+      matrix:
+        language:
+          - python
+          - javascript
+
+    steps:
+
+      - uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@v3
+
+      - name: Analyze
+        uses: github/codeql-action/analyze@v3
+
+##############################################################
+# Dependency Scan
+##############################################################
+
+  dependencies:
+
+    name: Dependency Audit
+
+    runs-on: ubuntu-latest
+
+    steps:
+
+      - uses: actions/checkout@v4
+
+      ########################################################
+      # Python
+      ########################################################
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install Python Dependencies
+        working-directory: backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pip-audit
+
+      - name: Python Audit
+        working-directory: backend
+        run: |
+          pip-audit
+
+      ########################################################
+      # Node
+      ########################################################
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install Frontend Dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: npm Audit
+        working-directory: frontend
+        run: |
+          npm audit --audit-level=high
+
+##############################################################
+# Secret Scanning
+##############################################################
+
+  secrets:
+
+    name: Secret Scan
+
+    runs-on: ubuntu-latest
+
+    steps:
+
+      - uses: actions/checkout@v4
+
+      - name: Run Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+
+##############################################################
+# Filesystem Scan
+##############################################################
+
+  trivy:
+
+    name: Trivy Filesystem Scan
+
+    runs-on: ubuntu-latest
+
+    steps:
+
+      - uses: actions/checkout@v4
+
+      - name: Run Trivy
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          scan-type: fs
+          format: sarif
+          output: trivy.sarif
+
+      - name: Upload SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy.sarif
+
+##############################################################
+# SBOM
+##############################################################
+
+  sbom:
+
+    name: Generate SBOM
+
+    runs-on: ubuntu-latest
+
+    steps:
+
+      - uses: actions/checkout@v4
+
+      - name: Generate SBOM
+        uses: anchore/sbom-action@v0
+
+      - name: Upload SBOM
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom
+          path: "*.spdx.json"
+
+##############################################################
+# License Check
+##############################################################
+
+  licenses:
+
+    name: License Compliance
+
+    runs-on: ubuntu-latest
+
+    steps:
+
+      - uses: actions/checkout@v4
+
+      - name: Install license-checker
+        run: |
+          npm install -g license-checker
+
+      - name: Check Licenses
+        working-directory: frontend
+        run: |
+          license-checker --summary
+
+##############################################################
+# Summary
+##############################################################
+
+  completed:
+
+    name: Security Pipeline Complete
+
+    runs-on: ubuntu-latest
+
+    needs:
+      - codeql
+      - dependencies
+      - secrets
+      - trivy
+      - sbom
+      - licenses
+
+    if: always()
+
+    steps:
+
+      - name: Summary
+        run: |
+          echo "=================================="
+          echo " Security Pipeline Completed"
+          echo "=================================="

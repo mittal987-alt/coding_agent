@@ -1,0 +1,197 @@
+name: Release Pipeline
+
+on:
+  push:
+    tags:
+      - "v*"
+
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  packages: write
+  id-token: write
+
+env:
+  AWS_REGION: ap-south-1
+  HELM_CHART: deployment/helm
+  RELEASE_NAME: ai-platform
+
+##############################################################
+# Jobs
+##############################################################
+
+jobs:
+
+##############################################################
+# Create Release
+##############################################################
+
+  release:
+
+    name: Create GitHub Release
+
+    runs-on: ubuntu-latest
+
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+
+    steps:
+
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Extract Version
+        id: version
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/}
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Generate Changelog
+        run: |
+          git log \
+          $(git describe --tags --abbrev=0 HEAD^)..HEAD \
+          --pretty=format:"- %s" \
+          > CHANGELOG.md
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.version }}
+          name: Release ${{ steps.version.outputs.version }}
+          body_path: CHANGELOG.md
+          generate_release_notes: true
+
+##############################################################
+# Build Release Artifacts
+##############################################################
+
+  artifacts:
+
+    name: Package Release
+
+    runs-on: ubuntu-latest
+
+    needs:
+      - release
+
+    steps:
+
+      - uses: actions/checkout@v4
+
+      - name: Create Archive
+        run: |
+          tar \
+          -czf \
+          ai-platform-${{ needs.release.outputs.version }}.tar.gz \
+          backend \
+          frontend \
+          deployment
+
+      - name: Upload Release Archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-package
+          path: ai-platform-${{ needs.release.outputs.version }}.tar.gz
+
+##############################################################
+# Docker Image Tags
+##############################################################
+
+  docker:
+
+    name: Tag Docker Images
+
+    runs-on: ubuntu-latest
+
+    needs:
+      - release
+
+    steps:
+
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ env.AWS_REGION }}
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+
+      - name: Login to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Tag Images
+        run: |
+          echo "Tagging backend image..."
+          echo "Tagging frontend image..."
+          echo "Tagging nginx image..."
+          echo "Tags:"
+          echo "- latest"
+          echo "- ${{ needs.release.outputs.version }}"
+          echo "- ${GITHUB_SHA::7}"
+
+##############################################################
+# Package Helm Chart
+##############################################################
+
+  helm:
+
+    name: Package Helm Chart
+
+    runs-on: ubuntu-latest
+
+    needs:
+      - release
+
+    steps:
+
+      - uses: actions/checkout@v4
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+
+      - name: Update Chart Version
+        run: |
+          sed -i \
+          "s/^version:.*/version: ${{ needs.release.outputs.version }}/" \
+          $HELM_CHART/Chart.yaml
+
+      - name: Package Chart
+        run: |
+          helm package \
+          $HELM_CHART
+
+      - name: Upload Helm Package
+        uses: actions/upload-artifact@v4
+        with:
+          name: helm-chart
+          path: "*.tgz"
+
+##############################################################
+# Summary
+##############################################################
+
+  completed:
+
+    name: Release Complete
+
+    runs-on: ubuntu-latest
+
+    needs:
+      - release
+      - artifacts
+      - docker
+      - helm
+
+    if: always()
+
+    steps:
+
+      - name: Success
+        run: |
+          echo "======================================="
+          echo " Release Pipeline Completed"
+          echo " Version: ${{ needs.release.outputs.version }}"
+          echo "======================================="

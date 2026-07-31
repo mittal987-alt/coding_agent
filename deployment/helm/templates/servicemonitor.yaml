@@ -1,0 +1,212 @@
+{{- if .Values.monitoring.serviceMonitor.enabled }}
+
+# ============================================================
+# Backend ServiceMonitor
+# ============================================================
+
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+
+metadata:
+
+  name: {{ include "ai-platform.backend.service" . }}
+
+  namespace: {{ include "ai-platform.namespace" . }}
+
+  labels:
+
+{{ include "ai-platform.labels" . | indent 4 }}
+
+    release: prometheus
+
+spec:
+
+  namespaceSelector:
+
+    matchNames:
+
+      - {{ include "ai-platform.namespace" . }}
+
+  selector:
+
+    matchLabels:
+
+      app.kubernetes.io/component: backend
+
+  endpoints:
+
+    - port: metrics
+
+      path: /metrics
+
+      interval: 30s
+
+      scrapeTimeout: 10s
+
+      honorLabels: true
+
+      relabelings:
+
+        - sourceLabels:
+
+            - __meta_kubernetes_pod_name
+
+          targetLabel: pod
+
+        - sourceLabels:
+
+            - __meta_kubernetes_namespace
+
+          targetLabel: namespace
+
+---
+
+# ============================================================
+# Frontend ServiceMonitor
+# ============================================================
+
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+
+metadata:
+
+  name: {{ include "ai-platform.frontend.service" . }}
+
+  namespace: {{ include "ai-platform.namespace" . }}
+
+  labels:
+
+{{ include "ai-platform.labels" . | indent 4 }}
+
+    release: prometheus
+
+spec:
+
+  namespaceSelector:
+
+    matchNames:
+
+      - {{ include "ai-platform.namespace" . }}
+
+  selector:
+
+    matchLabels:
+
+      app.kubernetes.io/component: frontend
+
+  endpoints:
+
+    - port: http
+
+      path: /metrics
+
+      interval: 30s
+
+      scrapeTimeout: 10s
+
+---
+
+# ============================================================
+# PostgreSQL Exporter
+# ============================================================
+
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+
+metadata:
+
+  name: postgres-exporter
+
+  namespace: {{ include "ai-platform.namespace" . }}
+
+spec:
+
+  selector:
+
+    matchLabels:
+
+      app.kubernetes.io/component: postgres
+
+  endpoints:
+
+    - port: metrics
+
+      interval: 30s
+
+      path: /metrics
+
+---
+
+# ============================================================
+# Redis Exporter
+# ============================================================
+
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+
+metadata:
+
+  name: redis-exporter
+
+  namespace: {{ include "ai-platform.namespace" . }}
+
+spec:
+
+  selector:
+
+    matchLabels:
+
+      app.kubernetes.io/component: redis
+
+  endpoints:
+
+    - port: metrics
+
+      interval: 30s
+
+      path: /metrics
+
+---
+
+# ============================================================
+# Qdrant Metrics
+# ============================================================
+
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+
+metadata:
+
+  name: qdrant-monitor
+
+  namespace: {{ include "ai-platform.namespace" . }}
+
+spec:
+
+  selector:
+
+    matchLabels:
+
+      app.kubernetes.io/component: qdrant
+
+  endpoints:
+
+    - port: http
+
+      path: /metrics
+
+      interval: 30s
+
+      scrapeTimeout: 10s
+
+      metricRelabelings:
+
+        - sourceLabels:
+
+            - __name__
+
+          regex: "go_.*"
+
+          action: keep
+
+{{- end }}

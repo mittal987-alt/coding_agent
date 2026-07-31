@@ -1,0 +1,374 @@
+{{- if .Values.networkPolicy.enabled }}
+
+# ============================================================
+# Default Deny All
+# ============================================================
+
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+
+metadata:
+
+  name: default-deny
+
+  namespace: {{ include "ai-platform.namespace" . }}
+
+  labels:
+
+{{ include "ai-platform.labels" . | indent 4 }}
+
+spec:
+
+  podSelector: {}
+
+  policyTypes:
+
+    - Ingress
+
+    - Egress
+
+---
+
+# ============================================================
+# Backend Network Policy
+# ============================================================
+
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+
+metadata:
+
+  name: backend-network-policy
+
+  namespace: {{ include "ai-platform.namespace" . }}
+
+spec:
+
+  podSelector:
+
+    matchLabels:
+
+      app.kubernetes.io/component: backend
+
+  policyTypes:
+
+    - Ingress
+
+    - Egress
+
+  ingress:
+
+    - from:
+
+        - podSelector:
+
+            matchLabels:
+
+              app.kubernetes.io/component: frontend
+
+        - namespaceSelector: {}
+
+      ports:
+
+        - protocol: TCP
+
+          port: 8000
+
+  egress:
+
+    - to:
+
+        - podSelector:
+
+            matchLabels:
+
+              app.kubernetes.io/component: postgres
+
+      ports:
+
+        - protocol: TCP
+
+          port: 5432
+
+    - to:
+
+        - podSelector:
+
+            matchLabels:
+
+              app.kubernetes.io/component: redis
+
+      ports:
+
+        - protocol: TCP
+
+          port: 6379
+
+    - to:
+
+        - podSelector:
+
+            matchLabels:
+
+              app.kubernetes.io/component: qdrant
+
+      ports:
+
+        - protocol: TCP
+
+          port: 6333
+
+    - to:
+
+        - namespaceSelector: {}
+
+      ports:
+
+        - protocol: UDP
+
+          port: 53
+
+        - protocol: TCP
+
+          port: 53
+
+---
+
+# ============================================================
+# Frontend Network Policy
+# ============================================================
+
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+
+metadata:
+
+  name: frontend-network-policy
+
+  namespace: {{ include "ai-platform.namespace" . }}
+
+spec:
+
+  podSelector:
+
+    matchLabels:
+
+      app.kubernetes.io/component: frontend
+
+  policyTypes:
+
+    - Ingress
+
+    - Egress
+
+  ingress:
+
+    - {}
+
+  egress:
+
+    - to:
+
+        - podSelector:
+
+            matchLabels:
+
+              app.kubernetes.io/component: backend
+
+      ports:
+
+        - protocol: TCP
+
+          port: 8000
+
+    - to:
+
+        - namespaceSelector: {}
+
+      ports:
+
+        - protocol: UDP
+
+          port: 53
+
+        - protocol: TCP
+
+          port: 53
+
+---
+
+# ============================================================
+# PostgreSQL Network Policy
+# ============================================================
+
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+
+metadata:
+
+  name: postgres-network-policy
+
+  namespace: {{ include "ai-platform.namespace" . }}
+
+spec:
+
+  podSelector:
+
+    matchLabels:
+
+      app.kubernetes.io/component: postgres
+
+  policyTypes:
+
+    - Ingress
+
+  ingress:
+
+    - from:
+
+        - podSelector:
+
+            matchLabels:
+
+              app.kubernetes.io/component: backend
+
+      ports:
+
+        - protocol: TCP
+
+          port: 5432
+
+---
+
+# ============================================================
+# Redis Network Policy
+# ============================================================
+
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+
+metadata:
+
+  name: redis-network-policy
+
+  namespace: {{ include "ai-platform.namespace" . }}
+
+spec:
+
+  podSelector:
+
+    matchLabels:
+
+      app.kubernetes.io/component: redis
+
+  policyTypes:
+
+    - Ingress
+
+  ingress:
+
+    - from:
+
+        - podSelector:
+
+            matchLabels:
+
+              app.kubernetes.io/component: backend
+
+      ports:
+
+        - protocol: TCP
+
+          port: 6379
+
+---
+
+# ============================================================
+# Qdrant Network Policy
+# ============================================================
+
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+
+metadata:
+
+  name: qdrant-network-policy
+
+  namespace: {{ include "ai-platform.namespace" . }}
+
+spec:
+
+  podSelector:
+
+    matchLabels:
+
+      app.kubernetes.io/component: qdrant
+
+  policyTypes:
+
+    - Ingress
+
+  ingress:
+
+    - from:
+
+        - podSelector:
+
+            matchLabels:
+
+              app.kubernetes.io/component: backend
+
+      ports:
+
+        - protocol: TCP
+
+          port: 6333
+
+        - protocol: TCP
+
+          port: 6334
+
+---
+
+# ============================================================
+# Prometheus Access
+# ============================================================
+
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+
+metadata:
+
+  name: metrics-network-policy
+
+  namespace: {{ include "ai-platform.namespace" . }}
+
+spec:
+
+  podSelector: {}
+
+  policyTypes:
+
+    - Ingress
+
+  ingress:
+
+    - from:
+
+        - namespaceSelector:
+
+            matchLabels:
+
+              kubernetes.io/metadata.name: monitoring
+
+      ports:
+
+        - protocol: TCP
+
+          port: 9090
+
+        - protocol: TCP
+
+          port: 8000
+
+{{- end }}

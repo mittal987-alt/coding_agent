@@ -1,0 +1,565 @@
+# ============================================================
+# Production Global Configuration
+# ============================================================
+
+global:
+
+  environment: production
+
+  storageClass: premium-ssd
+
+  timezone: Asia/Kolkata
+
+  imagePullSecrets:
+
+    - docker-registry-secret
+
+# ============================================================
+# Images
+# ============================================================
+
+images:
+
+  backend:
+
+    repository: ghcr.io/your-org/ai-platform-backend
+
+    tag: "1.0.0"
+
+    pullPolicy: IfNotPresent
+
+  frontend:
+
+    repository: ghcr.io/your-org/ai-platform-frontend
+
+    tag: "1.0.0"
+
+    pullPolicy: IfNotPresent
+
+  worker:
+
+    repository: ghcr.io/your-org/ai-platform-worker
+
+    tag: "1.0.0"
+
+    pullPolicy: IfNotPresent
+
+  codeExecutor:
+
+    repository: ghcr.io/your-org/code-executor
+
+    tag: "1.0.0"
+
+    pullPolicy: IfNotPresent
+
+# ============================================================
+# Backend
+# ============================================================
+
+backend:
+
+  replicaCount: 5
+
+  resources:
+
+    requests:
+
+      cpu: "1"
+
+      memory: 2Gi
+
+    limits:
+
+      cpu: "4"
+
+      memory: 8Gi
+
+  autoscaling:
+
+    enabled: true
+
+    minReplicas: 5
+
+    maxReplicas: 30
+
+    targetCPUUtilizationPercentage: 70
+
+    targetMemoryUtilizationPercentage: 75
+
+# ============================================================
+# Frontend
+# ============================================================
+
+frontend:
+
+  replicaCount: 3
+
+  resources:
+
+    requests:
+
+      cpu: 500m
+
+      memory: 1Gi
+
+    limits:
+
+      cpu: "2"
+
+      memory: 4Gi
+
+  autoscaling:
+
+    enabled: true
+
+    minReplicas: 3
+
+    maxReplicas: 15
+
+# ============================================================
+# Worker
+# ============================================================
+
+worker:
+
+  replicaCount: 4
+
+  concurrency: 8
+
+  autoscaling:
+
+    enabled: true
+
+    minReplicas: 4
+
+    maxReplicas: 25
+
+# ============================================================
+# Code Executor
+# ============================================================
+
+codeExecutor:
+
+  replicaCount: 3
+
+  executionTimeout: 60
+
+  memoryLimitMB: 4096
+
+  workspaceSize: 20Gi
+
+  resources:
+
+    requests:
+
+      cpu: "2"
+
+      memory: 4Gi
+
+    limits:
+
+      cpu: "8"
+
+      memory: 16Gi
+# ============================================================
+# Production Global Configuration
+# ============================================================
+
+global:
+
+  environment: production
+
+  storageClass: premium-ssd
+
+  timezone: Asia/Kolkata
+
+  imagePullSecrets:
+
+    - docker-registry-secret
+
+# ============================================================
+# Images
+# ============================================================
+
+images:
+
+  backend:
+
+    repository: ghcr.io/your-org/ai-platform-backend
+
+    tag: "1.0.0"
+
+    pullPolicy: IfNotPresent
+
+  frontend:
+
+    repository: ghcr.io/your-org/ai-platform-frontend
+
+    tag: "1.0.0"
+
+    pullPolicy: IfNotPresent
+
+  worker:
+
+    repository: ghcr.io/your-org/ai-platform-worker
+
+    tag: "1.0.0"
+
+    pullPolicy: IfNotPresent
+
+  codeExecutor:
+
+    repository: ghcr.io/your-org/code-executor
+
+    tag: "1.0.0"
+
+    pullPolicy: IfNotPresent
+
+# ============================================================
+# Backend
+# ============================================================
+
+backend:
+
+  replicaCount: 5
+
+  resources:
+
+    requests:
+
+      cpu: "1"
+
+      memory: 2Gi
+
+    limits:
+
+      cpu: "4"
+
+      memory: 8Gi
+
+  autoscaling:
+
+    enabled: true
+
+    minReplicas: 5
+
+    maxReplicas: 30
+
+    targetCPUUtilizationPercentage: 70
+
+    targetMemoryUtilizationPercentage: 75
+
+# ============================================================
+# Frontend
+# ============================================================
+
+frontend:
+
+  replicaCount: 3
+
+  resources:
+
+    requests:
+
+      cpu: 500m
+
+      memory: 1Gi
+
+    limits:
+
+      cpu: "2"
+
+      memory: 4Gi
+
+  autoscaling:
+
+    enabled: true
+
+    minReplicas: 3
+
+    maxReplicas: 15
+
+# ============================================================
+# Worker
+# ============================================================
+
+worker:
+
+  replicaCount: 4
+
+  concurrency: 8
+
+  autoscaling:
+
+    enabled: true
+
+    minReplicas: 4
+
+    maxReplicas: 25
+
+# ============================================================
+# Code Executor
+# ============================================================
+
+codeExecutor:
+
+  replicaCount: 3
+
+  executionTimeout: 60
+
+  memoryLimitMB: 4096
+
+  workspaceSize: 20Gi
+
+  resources:
+
+    requests:
+
+      cpu: "2"
+
+      memory: 4Gi
+
+    limits:
+
+      cpu: "8"
+
+      memory: 16Gi
+  # ============================================================
+# Production Environment
+# ============================================================
+
+env:
+
+  APP_ENV: production
+
+  LOG_LEVEL: INFO
+
+  API_PREFIX: /api/v1
+
+  TZ: Asia/Kolkata
+
+  WORKERS: 8
+
+  CORS_ORIGINS:
+
+    - https://app.example.com
+
+    - https://admin.example.com
+
+# ============================================================
+# Secrets
+# ============================================================
+
+secrets:
+
+  existingSecret: ai-platform-secrets
+
+  databaseUrlKey: DATABASE_URL
+
+  redisUrlKey: REDIS_URL
+
+  jwtSecretKey: JWT_SECRET
+
+  sessionSecretKey: SESSION_SECRET
+
+  encryptionKey: ENCRYPTION_KEY
+
+# ============================================================
+# AI Providers
+# ============================================================
+
+llm:
+
+  provider: openai
+
+  embeddingProvider: openai
+
+  fallbackProvider: mistral
+
+  requestTimeout: 120
+
+  maxRetries: 5
+
+  providers:
+
+    openai:
+
+      enabled: true
+
+      existingSecret: llm-provider-secrets
+
+      apiKeyKey: OPENAI_API_KEY
+
+    anthropic:
+
+      enabled: true
+
+      existingSecret: llm-provider-secrets
+
+      apiKeyKey: ANTHROPIC_API_KEY
+
+    google:
+
+      enabled: true
+
+      existingSecret: llm-provider-secrets
+
+      apiKeyKey: GOOGLE_API_KEY
+
+    mistral:
+
+      enabled: true
+
+      existingSecret: llm-provider-secrets
+
+      apiKeyKey: MISTRAL_API_KEY
+
+# ============================================================
+# Feature Flags
+# ============================================================
+
+features:
+
+  rag: true
+
+  semanticSearch: true
+
+  aiChat: true
+
+  codeExecution: true
+
+  websocket: true
+
+  githubIntegration: true
+
+  gitlabIntegration: true
+
+  usageAnalytics: true
+
+  telemetry: true
+
+# ============================================================
+# SMTP
+# ============================================================
+
+smtp:
+
+  enabled: true
+
+  existingSecret: smtp-secret
+
+  host: smtp.example.com
+
+  port: 587
+
+  from: noreply@example.com
+
+# ============================================================
+# Git Integrations
+# ============================================================
+
+git:
+
+  github:
+
+    enabled: true
+
+    existingSecret: github-secret
+
+  gitlab:
+
+    enabled: true
+
+    existingSecret: gitlab-secret
+
+# ============================================================
+# Scheduling
+# ============================================================
+
+nodeSelector:
+
+  kubernetes.io/os: linux
+
+tolerations:
+
+  - key: workload
+
+    operator: Equal
+
+    value: production
+
+    effect: NoSchedule
+
+affinity:
+
+  podAntiAffinity:
+
+    preferredDuringSchedulingIgnoredDuringExecution:
+
+      - weight: 100
+
+        podAffinityTerm:
+
+          topologyKey: topology.kubernetes.io/zone
+
+# ============================================================
+# Security
+# ============================================================
+
+security:
+
+  podSecurityContext:
+
+    runAsNonRoot: true
+
+    fsGroup: 1000
+
+  containerSecurityContext:
+
+    runAsUser: 1000
+
+    runAsGroup: 1000
+
+    allowPrivilegeEscalation: false
+
+    readOnlyRootFilesystem: false
+
+    capabilities:
+
+      drop:
+
+        - ALL
+
+    seccompProfile:
+
+      type: RuntimeDefault
+
+# ============================================================
+# Common Labels
+# ============================================================
+
+commonLabels:
+
+  environment: production
+
+  app.kubernetes.io/name: ai-software-engineer
+
+  app.kubernetes.io/component: platform
+
+  app.kubernetes.io/managed-by: Helm
+
+# ============================================================
+# Common Annotations
+# ============================================================
+
+commonAnnotations:
+
+  prometheus.io/scrape: "true"
+
+  prometheus.io/path: /metrics
+
+  prometheus.io/port: "8000"
+
+  backup/enabled: "true"
+
+  security/open-policy-agent: "enabled"

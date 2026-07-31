@@ -1,0 +1,227 @@
+{{- if .Values.postgresql.enabled }}
+
+# ============================================================
+# PostgreSQL Headless Service
+# ============================================================
+
+apiVersion: v1
+kind: Service
+
+metadata:
+
+  name: {{ include "ai-platform.fullname" . }}-postgres
+
+  namespace: {{ include "ai-platform.namespace" . }}
+
+  labels:
+
+{{ include "ai-platform.labels" . | indent 4 }}
+
+spec:
+
+  clusterIP: None
+
+  ports:
+
+    - name: postgres
+
+      port: 5432
+
+      targetPort: 5432
+
+      protocol: TCP
+
+  selector:
+
+{{ include "ai-platform.selectorLabels" . | indent 4 }}
+
+    app.kubernetes.io/component: postgres
+
+---
+# ============================================================
+# PostgreSQL StatefulSet
+# ============================================================
+
+apiVersion: apps/v1
+kind: StatefulSet
+
+metadata:
+
+  name: {{ include "ai-platform.fullname" . }}-postgres
+
+  namespace: {{ include "ai-platform.namespace" . }}
+
+  labels:
+
+{{ include "ai-platform.labels" . | indent 4 }}
+
+spec:
+
+  serviceName: {{ include "ai-platform.fullname" . }}-postgres
+
+  replicas: 1
+
+  selector:
+
+    matchLabels:
+
+{{ include "ai-platform.selectorLabels" . | indent 6 }}
+
+      app.kubernetes.io/component: postgres
+
+  template:
+
+    metadata:
+
+      labels:
+
+{{ include "ai-platform.selectorLabels" . | indent 8 }}
+
+        app.kubernetes.io/component: postgres
+
+    spec:
+
+      securityContext:
+
+{{ include "ai-platform.podSecurityContext" . | indent 8 }}
+
+      containers:
+
+        - name: postgres
+
+          image: postgres:16
+
+          imagePullPolicy: IfNotPresent
+
+          ports:
+
+            - containerPort: 5432
+
+              name: postgres
+
+          env:
+
+            - name: POSTGRES_DB
+
+              value: app
+
+            - name: POSTGRES_USER
+
+              valueFrom:
+
+                secretKeyRef:
+
+                  name: {{ include "ai-platform.secretName" . }}
+
+                  key: DB_USERNAME
+
+            - name: POSTGRES_PASSWORD
+
+              valueFrom:
+
+                secretKeyRef:
+
+                  name: {{ include "ai-platform.secretName" . }}
+
+                  key: DB_PASSWORD
+          resources:
+
+            requests:
+
+              cpu: {{ .Values.postgresql.primary.resources.requests.cpu }}
+
+              memory: {{ .Values.postgresql.primary.resources.requests.memory }}
+
+            limits:
+
+              cpu: {{ .Values.postgresql.primary.resources.limits.cpu }}
+
+              memory: {{ .Values.postgresql.primary.resources.limits.memory }}
+
+          securityContext:
+
+{{ include "ai-platform.containerSecurityContext" . | indent 12 }}
+
+          volumeMounts:
+
+            - name: postgres-data
+
+              mountPath: /var/lib/postgresql/data
+
+          livenessProbe:
+
+            exec:
+
+              command:
+
+                - sh
+
+                - -c
+
+                - pg_isready -U "$POSTGRES_USER"
+
+            initialDelaySeconds: 30
+
+            periodSeconds: 10
+
+            timeoutSeconds: 5
+
+            failureThreshold: 6
+
+          readinessProbe:
+
+            exec:
+
+              command:
+
+                - sh
+
+                - -c
+
+                - pg_isready -U "$POSTGRES_USER"
+
+            initialDelaySeconds: 10
+
+            periodSeconds: 5
+
+            timeoutSeconds: 5
+
+            failureThreshold: 3
+
+      nodeSelector:
+
+{{ include "ai-platform.nodeSelector" . | indent 8 }}
+
+      affinity:
+
+{{ include "ai-platform.affinity" . | indent 8 }}
+
+      tolerations:
+
+{{ include "ai-platform.tolerations" . | indent 8 }}
+
+  volumeClaimTemplates:
+
+    - metadata:
+
+        name: postgres-data
+
+        labels:
+
+{{ include "ai-platform.labels" . | indent 10 }}
+
+      spec:
+
+        accessModes:
+
+          - ReadWriteOnce
+
+        storageClassName: {{ .Values.global.storageClass | quote }}
+
+        resources:
+
+          requests:
+
+            storage: {{ .Values.postgresql.primary.persistence.size }}
+
+{{- end }}

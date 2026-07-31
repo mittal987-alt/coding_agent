@@ -1,0 +1,131 @@
+##############################################################
+# Project
+##############################################################
+
+project_name = "ai-platform"
+
+environment = "production"
+
+owner = "DevOps Team"
+
+##############################################################
+# AWS
+##############################################################
+
+aws_region = "ap-south-1"
+
+##############################################################
+# Networking
+##############################################################
+
+vpc_cidr = "10.0.0.0/16"
+
+availability_zones = [
+  "ap-south-1a",
+  "ap-south-1b",
+  "ap-south-1c"
+]
+
+public_subnets = [
+  "10.0.1.0/24",
+  "10.0.2.0/24",
+  "10.0.3.0/24"
+]
+
+private_subnets = [
+  "10.0.11.0/24",
+  "10.0.12.0/24",
+  "10.0.13.0/24"
+]
+
+database_subnets = [
+  "10.0.21.0/24",
+  "10.0.22.0/24",
+  "10.0.23.0/24"
+]
+
+enable_nat_gateway = true
+
+single_nat_gateway = false
+
+##############################################################
+# EKS
+##############################################################
+
+cluster_name = "ai-platform"
+
+kubernetes_version = "1.31"
+
+desired_size = 2
+
+min_size = 2
+
+max_size = 6
+
+node_instance_types = [
+  "t3.large"
+]
+
+node_capacity_type = "ON_DEMAND"
+
+disk_size = 50
+
+enable_ssh_access = false
+
+ssh_key_name = ""
+
+##############################################################
+# PostgreSQL
+##############################################################
+
+db_name = "ai_platform"
+
+db_username = "postgres"
+
+db_password = "CHANGE_ME_TO_A_SECURE_PASSWORD"
+
+db_instance_class = "db.t3.medium"
+
+db_allocated_storage = 100
+
+db_max_allocated_storage = 500
+
+db_multi_az = true
+
+##############################################################
+# Redis
+##############################################################
+
+redis_node_type = "cache.t3.medium"
+
+redis_engine_version = "7.1"
+
+redis_num_cache_clusters = 2
+
+##############################################################
+# ECR
+##############################################################
+
+ecr_image_mutability = "IMMUTABLE"
+
+ecr_scan_on_push = true
+
+##############################################################
+# Monitoring
+##############################################################
+
+enable_monitoring = true
+
+enable_container_insights = true
+
+log_retention_days = 30
+
+##############################################################
+# Security
+##############################################################
+
+enable_deletion_protection = true
+
+allowed_ingress_cidrs = [
+  "0.0.0.0/0"
+]

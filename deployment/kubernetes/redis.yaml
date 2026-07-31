@@ -1,0 +1,743 @@
+# redis.yaml
+# ============================================================
+# Redis Headless Service
+# ============================================================
+
+apiVersion: v1
+kind: Service
+
+metadata:
+  name: redis-headless
+  namespace: ai-platform
+
+  labels:
+    app: redis
+
+spec:
+
+  clusterIP: None
+
+  selector:
+    app: redis
+
+  ports:
+
+  - name: redis
+
+    port: 6379
+
+    targetPort: 6379
+
+---
+# ============================================================
+# Redis Service
+# ============================================================
+
+apiVersion: v1
+kind: Service
+
+metadata:
+
+  name: redis-service
+
+  namespace: ai-platform
+
+  labels:
+
+    app: redis
+
+spec:
+
+  type: ClusterIP
+
+  selector:
+
+    app: redis
+
+  ports:
+
+  - name: redis
+
+    port: 6379
+
+    targetPort: 6379
+
+---
+# ============================================================
+# Redis StatefulSet
+# ============================================================
+
+apiVersion: apps/v1
+kind: StatefulSet
+
+metadata:
+
+  name: redis
+
+  namespace: ai-platform
+
+  labels:
+
+    app: redis
+
+spec:
+
+  serviceName: redis-headless
+
+  replicas: 1
+
+  revisionHistoryLimit: 10
+
+  selector:
+
+    matchLabels:
+
+      app: redis
+
+  template:
+
+    metadata:
+
+      labels:
+
+        app: redis
+
+      annotations:
+
+        prometheus.io/scrape: "true"
+
+        prometheus.io/port: "9121"
+
+    spec:
+
+      terminationGracePeriodSeconds: 30
+
+      securityContext:
+
+        fsGroup: 1001
+
+      affinity:
+
+        podAntiAffinity:
+
+          preferredDuringSchedulingIgnoredDuringExecution:
+
+          - weight: 100
+
+            podAffinityTerm:
+
+              topologyKey: kubernetes.io/hostname
+
+              labelSelector:
+
+                matchLabels:
+
+                  app: redis
+
+      imagePullSecrets:
+
+      - name: docker-registry-secret
+
+      initContainers:
+
+      - name: init-data
+
+        image: busybox
+
+        command:
+
+        - sh
+
+        - -c
+
+        - |
+
+          mkdir -p /data
+
+          chown -R 1001:1001 /data
+
+        volumeMounts:
+
+        - name: redis-storage
+
+          mountPath: /data
+      containers:
+
+      - name: redis
+
+        image: redis:7.2-alpine
+
+        imagePullPolicy: IfNotPresent
+
+        command:
+
+        - redis-server
+
+        - /etc/redis/redis.conf
+
+        ports:
+
+        - name: redis
+
+          containerPort: 6379
+
+          protocol: TCP
+
+        env:
+
+        - name: REDIS_PASSWORD
+
+          valueFrom:
+
+            secretKeyRef:
+
+              name: redis-secret
+
+              key: REDIS_PASSWORD
+
+        envFrom:
+
+        - configMapRef:
+
+            name: redis-config
+
+        resources:
+
+          requests:
+
+            cpu: "250m"
+
+            memory: "512Mi"
+
+          limits:
+
+            cpu: "1"
+
+            memory: "2Gi"
+
+        volumeMounts:
+
+        - name: redis-storage
+
+          mountPath: /data
+
+        - name: redis-config-volume
+
+          mountPath: /etc/redis
+
+          readOnly: true
+
+        - name: redis-tmp
+
+          mountPath: /tmp
+
+        startupProbe:
+
+          exec:
+
+            command:
+
+            - sh
+
+            - -c
+
+            - |
+
+              redis-cli ping
+
+          failureThreshold: 30
+
+          periodSeconds: 10
+
+          timeoutSeconds: 5
+
+        readinessProbe:
+
+          exec:
+
+            command:
+
+            - sh
+
+            - -c
+
+            - |
+
+              redis-cli ping
+
+          initialDelaySeconds: 10
+
+          periodSeconds: 10
+
+          timeoutSeconds: 5
+
+          failureThreshold: 5
+
+        livenessProbe:
+
+          exec:
+
+            command:
+
+            - sh
+
+            - -c
+
+            - |
+
+              redis-cli ping
+
+          initialDelaySeconds: 30
+
+          periodSeconds: 20
+
+          timeoutSeconds: 5
+
+          failureThreshold: 5
+
+        lifecycle:
+
+          preStop:
+
+            exec:
+
+              command:
+
+              - sh
+
+              - -c
+
+              - |
+
+                redis-cli SAVE
+
+                sleep 10
+
+        securityContext:
+
+          runAsNonRoot: true
+
+          runAsUser: 1001
+
+          runAsGroup: 1001
+
+          allowPrivilegeEscalation: false
+
+          capabilities:
+
+            drop:
+
+            - ALL
+
+        terminationMessagePolicy: File
+
+      volumes:
+
+      - name: redis-config-volume
+
+        configMap:
+
+          name: redis-config
+
+      - name: redis-tmp
+
+        emptyDir: {}
+
+  volumeClaimTemplates:
+
+  - metadata:
+
+      name: redis-storage
+
+    spec:
+
+      accessModes:
+
+      - ReadWriteOnce
+
+      storageClassName: standard
+
+      resources:
+
+        requests:
+
+          storage: 20Gi
+---
+# ============================================================
+# Redis Pod Disruption Budget
+# ============================================================
+
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+
+metadata:
+  name: redis-pdb
+  namespace: ai-platform
+
+spec:
+
+  minAvailable: 1
+
+  selector:
+
+    matchLabels:
+
+      app: redis
+
+---
+# ============================================================
+# Redis Network Policy
+# ============================================================
+
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+
+metadata:
+
+  name: redis-network-policy
+
+  namespace: ai-platform
+
+spec:
+
+  podSelector:
+
+    matchLabels:
+
+      app: redis
+
+  policyTypes:
+
+    - Ingress
+    - Egress
+
+  ingress:
+
+    - from:
+
+      - podSelector:
+
+          matchLabels:
+
+            app: backend
+
+      - podSelector:
+
+          matchLabels:
+
+            app: worker
+
+      ports:
+
+      - protocol: TCP
+
+        port: 6379
+
+  egress:
+
+    - to:
+
+      - namespaceSelector: {}
+
+---
+# ============================================================
+# Redis Exporter
+# ============================================================
+
+apiVersion: apps/v1
+kind: Deployment
+
+metadata:
+
+  name: redis-exporter
+
+  namespace: monitoring
+
+  labels:
+
+    app: redis-exporter
+
+spec:
+
+  replicas: 1
+
+  selector:
+
+    matchLabels:
+
+      app: redis-exporter
+
+  template:
+
+    metadata:
+
+      labels:
+
+        app: redis-exporter
+
+    spec:
+
+      containers:
+
+      - name: exporter
+
+        image: oliver006/redis_exporter:v1.67.0
+
+        ports:
+
+        - containerPort: 9121
+
+          name: metrics
+
+        env:
+
+        - name: REDIS_ADDR
+
+          value: redis://redis-service.ai-platform.svc.cluster.local:6379
+
+        - name: REDIS_PASSWORD
+
+          valueFrom:
+
+            secretKeyRef:
+
+              name: redis-secret
+
+              key: REDIS_PASSWORD
+
+        resources:
+
+          requests:
+
+            cpu: 100m
+
+            memory: 128Mi
+
+          limits:
+
+            cpu: 500m
+
+            memory: 512Mi
+
+---
+# ============================================================
+# Redis Exporter Service
+# ============================================================
+
+apiVersion: v1
+kind: Service
+
+metadata:
+
+  name: redis-exporter
+
+  namespace: monitoring
+
+  labels:
+
+    app: redis-exporter
+
+spec:
+
+  selector:
+
+    app: redis-exporter
+
+  ports:
+
+    - name: metrics
+
+      port: 9121
+
+      targetPort: metrics
+
+---
+# ============================================================
+# ServiceMonitor
+# ============================================================
+
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+
+metadata:
+
+  name: redis-monitor
+
+  namespace: monitoring
+
+spec:
+
+  selector:
+
+    matchLabels:
+
+      app: redis-exporter
+
+  namespaceSelector:
+
+    matchNames:
+
+      - monitoring
+
+  endpoints:
+
+    - port: metrics
+
+      interval: 15s
+
+      scrapeTimeout: 10s
+
+---
+# ============================================================
+# Prometheus Alerts
+# ============================================================
+
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+
+metadata:
+
+  name: redis-alerts
+
+  namespace: monitoring
+
+spec:
+
+  groups:
+
+    - name: redis.rules
+
+      rules:
+
+      - alert: RedisDown
+
+        expr: up{job="redis-monitor"} == 0
+
+        for: 2m
+
+        labels:
+
+          severity: critical
+
+        annotations:
+
+          summary: Redis instance is unavailable
+
+      - alert: RedisMemoryHigh
+
+        expr: redis_memory_used_bytes / redis_memory_max_bytes > 0.90
+
+        for: 5m
+
+        labels:
+
+          severity: warning
+
+        annotations:
+
+          summary: Redis memory usage exceeded 90%
+
+      - alert: RedisTooManyClients
+
+        expr: redis_connected_clients > 500
+
+        for: 5m
+
+        labels:
+
+          severity: warning
+
+        annotations:
+
+          summary: Too many Redis clients connected
+
+---
+# ============================================================
+# Redis Backup CronJob
+# ============================================================
+
+apiVersion: batch/v1
+kind: CronJob
+
+metadata:
+
+  name: redis-backup
+
+  namespace: ai-platform
+
+spec:
+
+  schedule: "0 */6 * * *"
+
+  successfulJobsHistoryLimit: 5
+
+  failedJobsHistoryLimit: 2
+
+  jobTemplate:
+
+    spec:
+
+      template:
+
+        spec:
+
+          restartPolicy: OnFailure
+
+          containers:
+
+          - name: redis-backup
+
+            image: redis:7.2-alpine
+
+            command:
+
+            - sh
+
+            - -c
+
+            - |
+
+              redis-cli \
+                --rdb /backup/dump-$(date +%F-%H%M).rdb
+
+            volumeMounts:
+
+            - name: backup-storage
+
+              mountPath: /backup
+
+          volumes:
+
+          - name: backup-storage
+
+            persistentVolumeClaim:
+
+              claimName: redis-backup-pvc
+
+---
+# ============================================================
+# Backup PVC
+# ============================================================
+
+apiVersion: v1
+kind: PersistentVolumeClaim
+
+metadata:
+
+  name: redis-backup-pvc
+
+  namespace: ai-platform
+
+spec:
+
+  accessModes:
+
+    - ReadWriteOnce
+
+  storageClassName: standard
+
+  resources:
+
+    requests:
+
+      storage: 50Gi

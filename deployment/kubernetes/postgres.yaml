@@ -1,0 +1,665 @@
+# postgres.yaml
+# ============================================================
+# PostgreSQL Headless Service
+# ============================================================
+
+apiVersion: v1
+kind: Service
+
+metadata:
+  name: postgres-headless
+  namespace: ai-platform
+
+  labels:
+    app: postgres
+
+spec:
+
+  clusterIP: None
+
+  selector:
+    app: postgres
+
+  ports:
+
+    - name: postgres
+
+      port: 5432
+
+      targetPort: 5432
+
+---
+# ============================================================
+# PostgreSQL Service
+# ============================================================
+
+apiVersion: v1
+kind: Service
+
+metadata:
+
+  name: postgres-service
+
+  namespace: ai-platform
+
+  labels:
+
+    app: postgres
+
+spec:
+
+  type: ClusterIP
+
+  selector:
+
+    app: postgres
+
+  ports:
+
+    - name: postgres
+
+      port: 5432
+
+      targetPort: 5432
+
+      protocol: TCP
+
+---
+# ============================================================
+# PostgreSQL StatefulSet
+# ============================================================
+
+apiVersion: apps/v1
+kind: StatefulSet
+
+metadata:
+
+  name: postgres
+
+  namespace: ai-platform
+
+  labels:
+
+    app: postgres
+
+spec:
+
+  serviceName: postgres-headless
+
+  replicas: 1
+
+  podManagementPolicy: OrderedReady
+
+  revisionHistoryLimit: 10
+
+  selector:
+
+    matchLabels:
+
+      app: postgres
+
+  template:
+
+    metadata:
+
+      labels:
+
+        app: postgres
+
+      annotations:
+
+        prometheus.io/scrape: "true"
+
+        prometheus.io/port: "9187"
+
+    spec:
+
+      terminationGracePeriodSeconds: 60
+
+      securityContext:
+
+        fsGroup: 999
+
+      affinity:
+
+        podAntiAffinity:
+
+          preferredDuringSchedulingIgnoredDuringExecution:
+
+          - weight: 100
+
+            podAffinityTerm:
+
+              topologyKey: kubernetes.io/hostname
+
+              labelSelector:
+
+                matchLabels:
+
+                  app: postgres
+
+      initContainers:
+
+      - name: init-permissions
+
+        image: busybox:latest
+
+        command:
+
+        - sh
+
+        - -c
+
+        - |
+
+          mkdir -p /var/lib/postgresql/data
+
+          chown -R 999:999 /var/lib/postgresql
+
+        volumeMounts:
+
+        - name: postgres-storage
+
+          mountPath: /var/lib/postgresql
+
+      imagePullSecrets:
+
+      - name: docker-registry-secret
+      containers:
+
+      - name: postgres
+
+        image: postgres:16
+
+        imagePullPolicy: IfNotPresent
+
+        ports:
+
+        - name: postgres
+
+          containerPort: 5432
+
+          protocol: TCP
+
+        env:
+
+        - name: POSTGRES_DB
+
+          valueFrom:
+
+            secretKeyRef:
+
+              name: postgres-secret
+
+              key: POSTGRES_DB
+
+        - name: POSTGRES_USER
+
+          valueFrom:
+
+            secretKeyRef:
+
+              name: postgres-secret
+
+              key: POSTGRES_USER
+
+        - name: POSTGRES_PASSWORD
+
+          valueFrom:
+
+            secretKeyRef:
+
+              name: postgres-secret
+
+              key: POSTGRES_PASSWORD
+
+        - name: PGDATA
+
+          value: /var/lib/postgresql/data/pgdata
+
+        envFrom:
+
+        - configMapRef:
+
+            name: postgres-config
+
+        resources:
+
+          requests:
+
+            cpu: "500m"
+
+            memory: "1Gi"
+
+          limits:
+
+            cpu: "2"
+
+            memory: "4Gi"
+
+        volumeMounts:
+
+        - name: postgres-storage
+
+          mountPath: /var/lib/postgresql/data
+
+        - name: postgres-config-volume
+
+          mountPath: /etc/postgresql
+
+          readOnly: true
+
+        - name: postgres-tmp
+
+          mountPath: /tmp
+
+        readinessProbe:
+
+          exec:
+
+            command:
+
+            - sh
+
+            - -c
+
+            - |
+
+              pg_isready \
+                -U ${POSTGRES_USER}
+
+          initialDelaySeconds: 15
+
+          periodSeconds: 10
+
+          timeoutSeconds: 5
+
+          failureThreshold: 6
+
+        livenessProbe:
+
+          exec:
+
+            command:
+
+            - sh
+
+            - -c
+
+            - |
+
+              pg_isready \
+                -U ${POSTGRES_USER}
+
+          initialDelaySeconds: 30
+
+          periodSeconds: 20
+
+          timeoutSeconds: 5
+
+          failureThreshold: 5
+
+        startupProbe:
+
+          exec:
+
+            command:
+
+            - sh
+
+            - -c
+
+            - |
+
+              pg_isready \
+                -U ${POSTGRES_USER}
+
+          failureThreshold: 30
+
+          periodSeconds: 10
+
+        lifecycle:
+
+          preStop:
+
+            exec:
+
+              command:
+
+              - sh
+
+              - -c
+
+              - |
+
+                echo "Stopping PostgreSQL..."
+
+                sleep 20
+
+        securityContext:
+
+          runAsUser: 999
+
+          runAsGroup: 999
+
+          runAsNonRoot: true
+
+          allowPrivilegeEscalation: false
+
+          capabilities:
+
+            drop:
+
+            - ALL
+
+      volumes:
+
+      - name: postgres-config-volume
+
+        configMap:
+
+          name: postgres-config
+
+      - name: postgres-tmp
+
+        emptyDir: {}
+
+  volumeClaimTemplates:
+
+  - metadata:
+
+      name: postgres-storage
+
+    spec:
+
+      accessModes:
+
+      - ReadWriteOnce
+
+      storageClassName: standard
+
+      resources:
+
+        requests:
+
+          storage: 100Gi
+---
+# ============================================================
+# PostgreSQL Pod Disruption Budget
+# ============================================================
+
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+
+metadata:
+  name: postgres-pdb
+  namespace: ai-platform
+
+spec:
+
+  minAvailable: 1
+
+  selector:
+
+    matchLabels:
+
+      app: postgres
+
+---
+# ============================================================
+# PostgreSQL Network Policy
+# ============================================================
+
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+
+metadata:
+  name: postgres-network-policy
+  namespace: ai-platform
+
+spec:
+
+  podSelector:
+
+    matchLabels:
+
+      app: postgres
+
+  policyTypes:
+
+    - Ingress
+    - Egress
+
+  ingress:
+
+  - from:
+
+    - podSelector:
+
+        matchLabels:
+
+          app: backend
+
+    - podSelector:
+
+        matchLabels:
+
+          app: worker
+
+    ports:
+
+    - protocol: TCP
+      port: 5432
+
+  egress:
+
+  - to:
+
+    - namespaceSelector: {}
+
+---
+# ============================================================
+# Service Monitor
+# ============================================================
+
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+
+metadata:
+  name: postgres-monitor
+  namespace: monitoring
+
+spec:
+
+  namespaceSelector:
+
+    matchNames:
+
+      - ai-platform
+
+  selector:
+
+    matchLabels:
+
+      app: postgres
+
+  endpoints:
+
+    - port: postgres
+
+      interval: 30s
+
+      scrapeTimeout: 10s
+
+---
+# ============================================================
+# Prometheus Alert Rules
+# ============================================================
+
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+
+metadata:
+
+  name: postgres-alerts
+
+  namespace: monitoring
+
+spec:
+
+  groups:
+
+  - name: postgres.rules
+
+    rules:
+
+    - alert: PostgreSQLDown
+
+      expr: up{job="postgres"} == 0
+
+      for: 2m
+
+      labels:
+
+        severity: critical
+
+      annotations:
+
+        summary: PostgreSQL instance unavailable
+
+    - alert: PostgreSQLHighConnections
+
+      expr: pg_stat_activity_count > 150
+
+      for: 5m
+
+      labels:
+
+        severity: warning
+
+      annotations:
+
+        summary: High PostgreSQL connections
+
+    - alert: PostgreSQLStorageAlmostFull
+
+      expr: |
+        (
+          node_filesystem_avail_bytes
+          /
+          node_filesystem_size_bytes
+        ) < 0.10
+
+      for: 10m
+
+      labels:
+
+        severity: critical
+
+      annotations:
+
+        summary: PostgreSQL storage below 10%
+
+---
+# ============================================================
+# Nightly Backup Job
+# ============================================================
+
+apiVersion: batch/v1
+kind: CronJob
+
+metadata:
+
+  name: postgres-backup
+
+  namespace: ai-platform
+
+spec:
+
+  schedule: "0 2 * * *"
+
+  successfulJobsHistoryLimit: 7
+
+  failedJobsHistoryLimit: 3
+
+  jobTemplate:
+
+    spec:
+
+      template:
+
+        spec:
+
+          restartPolicy: OnFailure
+
+          containers:
+
+          - name: backup
+
+            image: postgres:16
+
+            command:
+
+            - sh
+
+            - -c
+
+            - |
+
+              export PGPASSWORD=$POSTGRES_PASSWORD
+
+              mkdir -p /backup
+
+              pg_dump \
+                -h postgres-service \
+                -U $POSTGRES_USER \
+                $POSTGRES_DB \
+                > /backup/database-$(date +%F).sql
+
+            envFrom:
+
+            - secretRef:
+
+                name: postgres-secret
+
+            volumeMounts:
+
+            - name: backup-storage
+
+              mountPath: /backup
+
+          volumes:
+
+          - name: backup-storage
+
+            persistentVolumeClaim:
+
+              claimName: postgres-backup-pvc
+
+---
+# ============================================================
+# Backup PVC
+# ============================================================
+
+apiVersion: v1
+kind: PersistentVolumeClaim
+
+metadata:
+
+  name: postgres-backup-pvc
+
+  namespace: ai-platform
+
+spec:
+
+  accessModes:
+
+    - ReadWriteOnce
+
+  storageClassName: standard
+
+  resources:
+
+    requests:
+
+      storage: 200Gi

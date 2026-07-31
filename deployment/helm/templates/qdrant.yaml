@@ -1,0 +1,231 @@
+{{- if .Values.qdrant.enabled }}
+
+# ============================================================
+# Qdrant Service
+# ============================================================
+
+apiVersion: v1
+kind: Service
+
+metadata:
+
+  name: {{ include "ai-platform.fullname" . }}-qdrant
+
+  namespace: {{ include "ai-platform.namespace" . }}
+
+  labels:
+
+{{ include "ai-platform.labels" . | indent 4 }}
+
+spec:
+
+  clusterIP: None
+
+  ports:
+
+    - name: http
+
+      port: 6333
+
+      targetPort: 6333
+
+      protocol: TCP
+
+    - name: grpc
+
+      port: 6334
+
+      targetPort: 6334
+
+      protocol: TCP
+
+  selector:
+
+{{ include "ai-platform.selectorLabels" . | indent 4 }}
+
+    app.kubernetes.io/component: qdrant
+
+---
+# ============================================================
+# Qdrant StatefulSet
+# ============================================================
+
+apiVersion: apps/v1
+kind: StatefulSet
+
+metadata:
+
+  name: {{ include "ai-platform.fullname" . }}-qdrant
+
+  namespace: {{ include "ai-platform.namespace" . }}
+
+  labels:
+
+{{ include "ai-platform.labels" . | indent 4 }}
+
+spec:
+
+  serviceName: {{ include "ai-platform.fullname" . }}-qdrant
+
+  replicas: {{ .Values.qdrant.replicaCount }}
+
+  selector:
+
+    matchLabels:
+
+{{ include "ai-platform.selectorLabels" . | indent 6 }}
+
+      app.kubernetes.io/component: qdrant
+
+  template:
+
+    metadata:
+
+      labels:
+
+{{ include "ai-platform.selectorLabels" . | indent 8 }}
+
+        app.kubernetes.io/component: qdrant
+
+    spec:
+
+      securityContext:
+
+{{ include "ai-platform.podSecurityContext" . | indent 8 }}
+
+      containers:
+
+        - name: qdrant
+
+          image: qdrant/qdrant:v1.13.2
+
+          imagePullPolicy: IfNotPresent
+
+          ports:
+
+            - containerPort: 6333
+
+              name: http
+
+            - containerPort: 6334
+
+              name: grpc
+
+          env:
+
+            - name: QDRANT__SERVICE__HTTP_PORT
+
+              value: "6333"
+
+            - name: QDRANT__SERVICE__GRPC_PORT
+
+              value: "6334"
+
+            - name: QDRANT__STORAGE__STORAGE_PATH
+
+              value: "/qdrant/storage"
+
+            - name: QDRANT__LOG_LEVEL
+
+              value: INFO
+          resources:
+
+            requests:
+
+              cpu: {{ .Values.qdrant.resources.requests.cpu }}
+
+              memory: {{ .Values.qdrant.resources.requests.memory }}
+
+            limits:
+
+              cpu: {{ .Values.qdrant.resources.limits.cpu }}
+
+              memory: {{ .Values.qdrant.resources.limits.memory }}
+
+          securityContext:
+
+{{ include "ai-platform.containerSecurityContext" . | indent 12 }}
+
+          volumeMounts:
+
+            - name: qdrant-storage
+
+              mountPath: /qdrant/storage
+
+          livenessProbe:
+
+            httpGet:
+
+              path: /healthz
+
+              port: http
+
+            initialDelaySeconds: 30
+
+            periodSeconds: 10
+
+            timeoutSeconds: 5
+
+            failureThreshold: 5
+
+          readinessProbe:
+
+            httpGet:
+
+              path: /readyz
+
+              port: http
+
+            initialDelaySeconds: 10
+
+            periodSeconds: 5
+
+            timeoutSeconds: 5
+
+            failureThreshold: 3
+
+      nodeSelector:
+
+{{ include "ai-platform.nodeSelector" . | indent 8 }}
+
+      affinity:
+
+{{ include "ai-platform.affinity" . | indent 8 }}
+
+      tolerations:
+
+{{ include "ai-platform.tolerations" . | indent 8 }}
+
+{{- with .Values.topologySpreadConstraints }}
+
+      topologySpreadConstraints:
+
+{{ include "ai-platform.topologySpreadConstraints" . | indent 8 }}
+
+{{- end }}
+
+  volumeClaimTemplates:
+
+    - metadata:
+
+        name: qdrant-storage
+
+        labels:
+
+{{ include "ai-platform.labels" . | indent 10 }}
+
+      spec:
+
+        accessModes:
+
+          - ReadWriteOnce
+
+        storageClassName: {{ .Values.global.storageClass | quote }}
+
+        resources:
+
+          requests:
+
+            storage: {{ .Values.qdrant.persistence.size }}
+
+{{- end }}

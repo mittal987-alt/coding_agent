@@ -1,0 +1,226 @@
+{{- if .Values.redis.enabled }}
+
+# ============================================================
+# Redis Service
+# ============================================================
+
+apiVersion: v1
+kind: Service
+
+metadata:
+
+  name: {{ include "ai-platform.fullname" . }}-redis
+
+  namespace: {{ include "ai-platform.namespace" . }}
+
+  labels:
+
+{{ include "ai-platform.labels" . | indent 4 }}
+
+spec:
+
+  clusterIP: None
+
+  ports:
+
+    - name: redis
+
+      port: 6379
+
+      targetPort: 6379
+
+      protocol: TCP
+
+  selector:
+
+{{ include "ai-platform.selectorLabels" . | indent 4 }}
+
+    app.kubernetes.io/component: redis
+
+---
+# ============================================================
+# Redis StatefulSet
+# ============================================================
+
+apiVersion: apps/v1
+kind: StatefulSet
+
+metadata:
+
+  name: {{ include "ai-platform.fullname" . }}-redis
+
+  namespace: {{ include "ai-platform.namespace" . }}
+
+  labels:
+
+{{ include "ai-platform.labels" . | indent 4 }}
+
+spec:
+
+  serviceName: {{ include "ai-platform.fullname" . }}-redis
+
+  replicas: {{ .Values.redis.replicaCount | default 1 }}
+
+  selector:
+
+    matchLabels:
+
+{{ include "ai-platform.selectorLabels" . | indent 6 }}
+
+      app.kubernetes.io/component: redis
+
+  template:
+
+    metadata:
+
+      labels:
+
+{{ include "ai-platform.selectorLabels" . | indent 8 }}
+
+        app.kubernetes.io/component: redis
+
+    spec:
+
+      securityContext:
+
+{{ include "ai-platform.podSecurityContext" . | indent 8 }}
+
+      containers:
+
+        - name: redis
+
+          image: redis:7-alpine
+
+          imagePullPolicy: IfNotPresent
+
+          ports:
+
+            - containerPort: 6379
+
+              name: redis
+
+          command:
+
+            - redis-server
+
+            - --appendonly
+
+            - "yes"
+
+            - --requirepass
+
+            - "$(REDIS_PASSWORD)"
+
+          env:
+
+            - name: REDIS_PASSWORD
+
+              valueFrom:
+
+                secretKeyRef:
+
+                  name: {{ include "ai-platform.secretName" . }}
+
+                  key: REDIS_PASSWORD
+
+          resources:
+
+            requests:
+
+              cpu: {{ .Values.redis.master.resources.requests.cpu }}
+
+              memory: {{ .Values.redis.master.resources.requests.memory }}
+
+            limits:
+
+              cpu: {{ .Values.redis.master.resources.limits.cpu }}
+
+              memory: {{ .Values.redis.master.resources.limits.memory }}
+
+          securityContext:
+
+{{ include "ai-platform.containerSecurityContext" . | indent 12 }}
+
+          volumeMounts:
+
+            - name: redis-data
+
+              mountPath: /data
+
+          livenessProbe:
+
+            exec:
+
+              command:
+
+                - sh
+
+                - -c
+
+                - redis-cli -a "$REDIS_PASSWORD" ping
+
+            initialDelaySeconds: 30
+
+            periodSeconds: 10
+
+            timeoutSeconds: 5
+
+            failureThreshold: 5
+
+          readinessProbe:
+
+            exec:
+
+              command:
+
+                - sh
+
+                - -c
+
+                - redis-cli -a "$REDIS_PASSWORD" ping
+
+            initialDelaySeconds: 10
+
+            periodSeconds: 5
+
+            timeoutSeconds: 5
+
+            failureThreshold: 3
+
+      nodeSelector:
+
+{{ include "ai-platform.nodeSelector" . | indent 8 }}
+
+      affinity:
+
+{{ include "ai-platform.affinity" . | indent 8 }}
+
+      tolerations:
+
+{{ include "ai-platform.tolerations" . | indent 8 }}
+
+  volumeClaimTemplates:
+
+    - metadata:
+
+        name: redis-data
+
+        labels:
+
+{{ include "ai-platform.labels" . | indent 10 }}
+
+      spec:
+
+        accessModes:
+
+          - ReadWriteOnce
+
+        storageClassName: {{ .Values.global.storageClass | quote }}
+
+        resources:
+
+          requests:
+
+            storage: {{ .Values.redis.master.persistence.size }}
+
+{{- end }}
