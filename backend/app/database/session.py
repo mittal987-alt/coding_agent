@@ -3,19 +3,33 @@ from sqlalchemy.orm import sessionmaker
 
 from app.core.config import settings
 
-# Only create the engine if a DATABASE_URL is configured
 _database_url: str | None = settings.DATABASE_URL
 
 if _database_url:
-    engine = create_engine(_database_url, echo=settings.DEBUG)
+    engine = create_engine(
+        _database_url,
+        echo=settings.DEBUG,
+
+        # Fixes dropped SSL connections (Neon)
+        pool_pre_ping=True,
+
+        # Recycle connections every 5 minutes
+        pool_recycle=300,
+
+        # Optional but recommended
+        pool_size=5,
+        max_overflow=10,
+    )
+
     SessionLocal = sessionmaker(
         autocommit=False,
         autoflush=False,
         bind=engine,
     )
+
 else:
-    engine = None  # type: ignore[assignment]
-    SessionLocal = None  # type: ignore[assignment]
+    engine = None  # type: ignore
+    SessionLocal = None  # type: ignore
 
 
 def get_db():
@@ -24,7 +38,9 @@ def get_db():
             "DATABASE_URL is not configured. "
             "Please set it in your .env file."
         )
+
     db = SessionLocal()
+
     try:
         yield db
     finally:

@@ -6,9 +6,9 @@ class TerminalManager:
     def __init__(self):
         self.sessions = {}
 
-    def create(self, cwd: str):
+    def create(self, cwd: str, name: str = "project"):
 
-        session = TerminalSession(cwd)
+        session = TerminalSession(cwd, name)
 
         self.sessions[session.id] = session
 

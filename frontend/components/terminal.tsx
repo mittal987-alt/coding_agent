@@ -18,8 +18,8 @@ export default function IDETerminal({
 
     const terminal = new Terminal({
       cursorBlink: true,
-      fontSize: 13,
       convertEol: true,
+      fontSize: 13,
       scrollback: 5000,
       theme: {
         background: "#111111",
@@ -27,14 +27,17 @@ export default function IDETerminal({
     });
 
     const fitAddon = new FitAddon();
-
     terminal.loadAddon(fitAddon);
 
     terminal.open(divRef.current);
 
-    // Wait for layout
     requestAnimationFrame(() => {
       fitAddon.fit();
+      terminal.focus();
+    });
+
+    divRef.current.addEventListener("click", () => {
+      terminal.focus();
     });
 
     const socket = new WebSocket(
@@ -42,16 +45,29 @@ export default function IDETerminal({
     );
 
     socket.onopen = () => {
+      console.log("WebSocket connected");
+
       setTimeout(() => {
         fitAddon.fit();
-      }, 50);
+        terminal.focus();
+      }, 100);
     };
 
     socket.onmessage = (event) => {
       terminal.write(event.data);
     };
 
+    socket.onerror = (err) => {
+      console.error("WebSocket Error", err);
+    };
+
+    socket.onclose = () => {
+      console.log("WebSocket closed");
+    };
+
     terminal.onData((data) => {
+      console.log("Typed:", JSON.stringify(data));
+
       if (socket.readyState === WebSocket.OPEN) {
         socket.send(data);
       }
@@ -72,7 +88,9 @@ export default function IDETerminal({
     return () => {
       observer.disconnect();
       window.removeEventListener("resize", resize);
+
       socket.close();
+
       terminal.dispose();
     };
   }, [sessionId]);
@@ -81,6 +99,7 @@ export default function IDETerminal({
     <div
       ref={divRef}
       className="w-full h-full overflow-hidden"
+      tabIndex={0}
     />
   );
 }

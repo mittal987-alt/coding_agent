@@ -10,7 +10,6 @@ router = APIRouter()
 
 storage = StorageManager()
 
-
 @router.post("/projects/{project_id}")
 def create_terminal(
     project_id: str,
@@ -24,7 +23,8 @@ def create_terminal(
     repo_path = storage.repository_path(project.id)
 
     session = terminal_manager.create(
-        cwd=str(repo_path)
+        cwd=str(repo_path),
+        name=project.name,
     )
 
     return {

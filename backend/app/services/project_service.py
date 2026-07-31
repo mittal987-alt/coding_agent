@@ -41,11 +41,18 @@ class ProjectService:
         try:
             from git import Repo
 
-            storage.create_workspace(str(project.id))
             repo_path = storage.repository_path(str(project.id))
+
+            repo_path.parent.mkdir(parents=True, exist_ok=True)
 
             if project.repository_url:
                 Repo.clone_from(project.repository_url, str(repo_path))
+
+                # Create the remaining fold ers after clone
+                storage.upload_path(str(project.id)).mkdir(parents=True, exist_ok=True)
+                storage.vectorstore_path(str(project.id)).mkdir(parents=True, exist_ok=True)
+                storage.logs_path(str(project.id)).mkdir(parents=True, exist_ok=True)
+                storage.temp_path(str(project.id)).mkdir(parents=True, exist_ok=True)
 
             workspace = Workspace(
                 project_id=project.id,

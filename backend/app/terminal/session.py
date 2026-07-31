@@ -4,10 +4,9 @@ import winpty
 
 
 class TerminalSession:
-    def __init__(self, cwd: str):
+    def __init__(self, cwd: str, name: str = "project"):
         self.id = str(uuid.uuid4())
 
-        # Create a terminal with an initial size
         self.pty = winpty.PTY(cols=120, rows=30)
 
         shell = os.environ.get(
@@ -15,11 +14,10 @@ class TerminalSession:
             r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe",
         )
 
-        # Start PowerShell
-        self.pty.spawn(shell)
+        self.pty.spawn(shell, cwd=cwd)
 
-        # Change directory after the shell starts
-        self.write(f'cd "{cwd}"\r\n')
+        safe_name = name.replace('"', '')
+        self.write(f'function prompt {{ "{safe_name}> " }}\r\n')
 
     def write(self, data: str):
         self.pty.write(data)
