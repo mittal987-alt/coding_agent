@@ -7,7 +7,12 @@ class StorageManager:
     Handles all project storage operations.
     """
 
-    BASE_DIR = Path("storage")
+    # Anchor storage to this file's location, not the process's current
+    # working directory. A relative Path("storage") would resolve
+    # differently depending on where uvicorn was launched from (repo root
+    # vs backend/ vs an IDE run config), which could make project storage
+    # appear to "move" or point at the wrong folder across restarts.
+    BASE_DIR = Path(__file__).resolve().parent.parent.parent / "storage"
     PROJECTS_DIR = BASE_DIR / "projects"
 
     def __init__(self):

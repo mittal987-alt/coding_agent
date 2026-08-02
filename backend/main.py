@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.bootstrap.container import container
 from app.api.v1.router import api_router
 from app.core.constant import API_PREFIX
-
+from app.api.v1.router import api_router
 from app.terminal.websocket import router as terminal_ws_router
 import app.models  # Register all SQLAlchemy models
 

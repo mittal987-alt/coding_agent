@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, Loader2, MessageSquare, Terminal, FileCode, Play, Folder, Settings, Send } from "lucide-react";
+import { ArrowLeft, Loader2, MessageSquare, Terminal, FileCode, Play, Folder, Settings, Send, PanelLeft, PanelRight, PanelBottom } from "lucide-react";
 import { ProjectService, Project } from "@/services/projects";
 import Link from "next/link";
 import ReactMarkdown from "react-markdown";
@@ -11,6 +11,12 @@ import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";
 import remarkGfm from "remark-gfm";
 import Editor from "@monaco-editor/react";
 import dynamic from "next/dynamic";
+import {
+  Panel,
+  PanelGroup,
+  PanelResizeHandle,
+  ImperativePanelHandle,
+} from "react-resizable-panels";
 
 const IDETerminal = dynamic(
   () => import("@/components/terminal"),
@@ -33,6 +39,16 @@ type FileNode = {
   children?: FileNode[];
 };
 
+type TerminalSession = {
+  id: string;
+  sessionId: string;
+  label: string;
+};
+
+function normalizePath(path: string): string {
+  return path.replace(/^\/+/, "").replace(/\/+/g, "/").trim();
+}
+
 function getLanguageFromPath(path: string): string {
   const ext = path.split(".").pop()?.toLowerCase() || "";
   const map: Record<string, string> = {
@@ -48,6 +64,15 @@ function getFileNameFromPath(path: string | null): string {
   if (!path) return "No file selected";
   const parts = path.split("/");
   return parts[parts.length - 1] || path;
+}
+
+function getTabLabel(path: string, allOpenPaths: string[]): string {
+  const name = getFileNameFromPath(path);
+  const dupes = allOpenPaths.filter((p) => getFileNameFromPath(p) === name);
+  if (dupes.length <= 1) return name;
+  const parts = path.split("/");
+  const parent = parts.length > 1 ? parts[parts.length - 2] : "";
+  return parent ? `${parent}/${name}` : name;
 }
 
 function FileNodeItem({
@@ -112,12 +137,46 @@ export default function WorkspacePage() {
   const [chatInput, setChatInput] = useState("");
   const [isTyping, setIsTyping] = useState(false);
 
-  const [editorContent, setEditorContent] = useState("");
   const [editorLanguage, setEditorLanguage] = useState("markdown");
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
+
+  const [openTabs, setOpenTabs] = useState<string[]>([]);
+
+  const [fileContents, setFileContents] = useState<Record<string, string>>({});
   const [fileTree, setFileTree] = useState<FileNode[]>([]);
   const [isLoadingFiles, setIsLoadingFiles] = useState(false);
-  const [terminalSession, setTerminalSession] = useState<string | null>(null);
+
+  const [terminals, setTerminals] = useState<TerminalSession[]>([]);
+  const [activeTerminalId, setActiveTerminalId] = useState<string | null>(null);
+
+  const chatPanelRef = useRef<ImperativePanelHandle>(null);
+  const repoPanelRef = useRef<ImperativePanelHandle>(null);
+  const terminalPanelRef = useRef<ImperativePanelHandle>(null);
+
+  const [isChatCollapsed, setIsChatCollapsed] = useState(false);
+  const [isRepoCollapsed, setIsRepoCollapsed] = useState(false);
+  const [isTerminalCollapsed, setIsTerminalCollapsed] = useState(false);
+
+  const toggleChatPanel = () => {
+    const panel = chatPanelRef.current;
+    if (!panel) return;
+    if (panel.isCollapsed()) panel.expand();
+    else panel.collapse();
+  };
+
+  const toggleRepoPanel = () => {
+    const panel = repoPanelRef.current;
+    if (!panel) return;
+    if (panel.isCollapsed()) panel.expand();
+    else panel.collapse();
+  };
+
+  const toggleTerminalPanel = () => {
+    const panel = terminalPanelRef.current;
+    if (!panel) return;
+    if (panel.isCollapsed()) panel.expand();
+    else panel.collapse();
+  };
 
   const [messages, setMessages] = useState<Message[]>([
     {
@@ -126,6 +185,13 @@ export default function WorkspacePage() {
       content: "Hello! I am your autonomous AI agent. How can I help you today?",
     },
   ]);
+
+  // Dedupe-safe tab opener: always checks the LATEST state via the functional
+  // updater, so concurrent/rapid calls (e.g. agent touching the same file
+  // across multiple replies) can never create duplicate tabs.
+  const openTab = (path: string) => {
+    setOpenTabs((prev) => (prev.includes(path) ? prev : [...prev, path]));
+  };
 
   const createTerminal = async () => {
     try {
@@ -142,13 +208,28 @@ export default function WorkspacePage() {
 
       const json = await res.json();
 
-      console.log(json);
-
-      setTerminalSession(json.session_id);
-
+      setTerminals((prev) => {
+        const newTerminal: TerminalSession = {
+          id: `t-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          sessionId: json.session_id,
+          label: `Terminal ${prev.length + 1}`,
+        };
+        setActiveTerminalId(newTerminal.id);
+        return [...prev, newTerminal];
+      });
     } catch (err) {
       console.error("Failed to create terminal", err);
     }
+  };
+
+  const closeTerminal = (id: string) => {
+    setTerminals((prev) => {
+      const remaining = prev.filter((t) => t.id !== id);
+      if (activeTerminalId === id) {
+        setActiveTerminalId(remaining.length > 0 ? remaining[remaining.length - 1].id : null);
+      }
+      return remaining;
+    });
   };
 
   const handleSendMessage = async () => {
@@ -223,20 +304,43 @@ export default function WorkspacePage() {
   };
 
   const handleFileClick = async (filePath: string) => {
-    setSelectedFile(filePath);
-    setEditorLanguage(getLanguageFromPath(filePath));
+    const path = normalizePath(filePath);
+
+    setSelectedFile(path);
+    setEditorLanguage(getLanguageFromPath(path));
+
+    // Already opened / already have content -> just ensure tab exists
+    if (fileContents[path] !== undefined) {
+      openTab(path);
+      return;
+    }
+
     try {
       const res = await fetch(
-        `http://localhost:8000/api/v1/projects/${projectId}/files/content?path=${encodeURIComponent(filePath)}`
+        `http://localhost:8000/api/v1/projects/${projectId}/files/content?path=${encodeURIComponent(
+          path
+        )}`
       );
+
       const json = await res.json();
-      if (json.success && json.data?.content !== undefined) {
-        setEditorContent(json.data.content);
-      } else {
-        setEditorContent(`// Could not load file: ${filePath}`);
-      }
+
+      const content =
+        json.success && json.data?.content !== undefined
+          ? json.data.content
+          : `// Could not load file: ${path}`;
+
+      setFileContents((prev) => ({
+        ...prev,
+        [path]: content,
+      }));
+
+      openTab(path);
     } catch {
-      setEditorContent(`// Error loading file: ${filePath}`);
+      setFileContents((prev) => ({
+        ...prev,
+        [path]: `// Error loading file: ${path}`,
+      }));
+      openTab(path);
     }
   };
 
@@ -245,9 +349,6 @@ export default function WorkspacePage() {
       try {
         const data = await ProjectService.getProject(projectId);
         setProject(data);
-        setEditorContent(
-          `# ${data.name}\n\nWelcome to your AI-assisted workspace.\n\nThis repository is ready for autonomous development. Use the chat panel on the left to instruct the AI agent to write code, refactor existing files, or investigate issues.\n\n## Getting Started\n1. Tell the agent what you want to build.\n2. Watch it edit the files autonomously.\n3. Review changes and collaborate.`
-        );
       } catch (error) {
         console.error("Failed to fetch project:", error);
       } finally {
@@ -275,6 +376,7 @@ export default function WorkspacePage() {
       fetchFileTree();
       createTerminal();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
 
   if (isLoading) {
@@ -299,6 +401,12 @@ export default function WorkspacePage() {
 
   return (
     <div className="h-screen flex flex-col bg-gray-50 dark:bg-[#0e0e0e] text-gray-900 dark:text-gray-200 overflow-hidden font-sans">
+      <style jsx global>{`
+        .no-scrollbar::-webkit-scrollbar {
+          display: none;
+        }
+      `}</style>
+
       {/* Top Navbar */}
       <header className="h-14 border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-[#151515] flex items-center justify-between px-4 shrink-0">
         <div className="flex items-center gap-4">
@@ -322,6 +430,38 @@ export default function WorkspacePage() {
             <span className="w-2 h-2 rounded-full bg-green-500"></span>
             Agent Idle
           </div>
+          <div className="flex items-center gap-1 bg-gray-100 dark:bg-gray-800 rounded-lg p-1">
+            <button
+              onClick={toggleChatPanel}
+              title="Toggle AI Assistant panel"
+              className={`p-1.5 rounded-md transition-colors ${isChatCollapsed
+                  ? "text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
+                  : "bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                }`}
+            >
+              <PanelLeft size={15} />
+            </button>
+            <button
+              onClick={toggleTerminalPanel}
+              title="Toggle Terminal panel"
+              className={`p-1.5 rounded-md transition-colors ${isTerminalCollapsed
+                  ? "text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
+                  : "bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                }`}
+            >
+              <PanelBottom size={15} />
+            </button>
+            <button
+              onClick={toggleRepoPanel}
+              title="Toggle Repository panel"
+              className={`p-1.5 rounded-md transition-colors ${isRepoCollapsed
+                  ? "text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
+                  : "bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                }`}
+            >
+              <PanelRight size={15} />
+            </button>
+          </div>
           <button className="p-2 text-gray-500 hover:text-gray-900 dark:hover:text-white transition-colors">
             <Settings size={18} />
           </button>
@@ -329,252 +469,381 @@ export default function WorkspacePage() {
       </header>
 
       {/* Main Workspace Layout */}
-      <main className="flex-1 flex overflow-hidden">
-        {/* Left Panel: Chat Interface */}
-        <aside className="w-80 border-r border-gray-200 dark:border-gray-800 bg-white dark:bg-[#151515] flex flex-col shrink-0">
-          <div className="h-12 border-b border-gray-200 dark:border-gray-800 flex items-center px-4">
-            <h2 className="text-sm font-semibold flex items-center gap-2">
-              <MessageSquare size={16} />
-              AI Assistant
-            </h2>
-          </div>
-          <div className="flex-1 overflow-y-auto p-4 space-y-4 scroll-smooth">
-            {messages.map((msg) => (
-              <div key={msg.id} className={`flex gap-3 ${msg.role === "user" ? "flex-row-reverse" : ""}`}>
-                <div
-                  className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 text-white text-xs font-bold ${msg.role === "user" ? "bg-purple-600" : "bg-blue-600"
-                    }`}
-                >
-                  {msg.role === "user" ? "U" : "AI"}
+      <PanelGroup direction="vertical" className="flex-1 min-h-0">
+        <Panel defaultSize={75} minSize={30}>
+          <PanelGroup direction="horizontal" className="h-full">
+            <Panel
+              ref={chatPanelRef}
+              defaultSize={20}
+              minSize={15}
+              maxSize={40}
+              collapsible
+              collapsedSize={0}
+              onCollapse={() => setIsChatCollapsed(true)}
+              onExpand={() => setIsChatCollapsed(false)}
+            >
+              {/* Left Panel: Chat Interface */}
+              <aside className="h-full border-r border-gray-200 dark:border-gray-800 bg-white dark:bg-[#151515] flex flex-col">
+                <div className="h-12 border-b border-gray-200 dark:border-gray-800 flex items-center px-4">
+                  <h2 className="text-sm font-semibold flex items-center gap-2">
+                    <MessageSquare size={16} />
+                    AI Assistant
+                  </h2>
                 </div>
-                <div
-                  className={`rounded-2xl p-3 text-sm max-w-[85%] ${msg.role === "user"
-                      ? "bg-purple-600 text-white rounded-tr-none"
-                      : "bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-gray-200 rounded-tl-none"
-                    }`}
-                >
-                  <div className="prose prose-sm dark:prose-invert max-w-none space-y-2 break-words">
-                    <ReactMarkdown
-                      remarkPlugins={[remarkGfm]}
-                      components={{
-                        code({ node, className, children, ...props }: any) {
-                          const match = /language-(\w+)/.exec(className || "");
-                          const isInline = !className && !String(children).includes("\n");
+                <div className="flex-1 overflow-y-auto p-4 space-y-4 scroll-smooth">
+                  {messages.map((msg) => (
+                    <div key={msg.id} className={`flex gap-3 ${msg.role === "user" ? "flex-row-reverse" : ""}`}>
+                      <div
+                        className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 text-white text-xs font-bold ${msg.role === "user" ? "bg-purple-600" : "bg-blue-600"
+                          }`}
+                      >
+                        {msg.role === "user" ? "U" : "AI"}
+                      </div>
+                      <div
+                        className={`rounded-2xl p-3 text-sm max-w-[85%] ${msg.role === "user"
+                            ? "bg-purple-600 text-white rounded-tr-none"
+                            : "bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-gray-200 rounded-tl-none"
+                          }`}
+                      >
+                        <div className="prose prose-sm dark:prose-invert max-w-none space-y-2 break-words">
+                          <ReactMarkdown
+                            remarkPlugins={[remarkGfm]}
+                            components={{
+                              code({ node, className, children, ...props }: any) {
+                                const match = /language-(\w+)/.exec(className || "");
+                                const isInline = !className && !String(children).includes("\n");
 
-                          return !isInline && match ? (
-                            <div className="mt-2 mb-2 rounded-md overflow-hidden border border-gray-700">
-                              <div className="bg-gray-800 text-gray-400 text-xs px-3 py-1 flex justify-between">
-                                <span>{match[1]}</span>
-                              </div>
-                              <SyntaxHighlighter
-                                style={vscDarkPlus as any}
-                                language={match[1]}
-                                PreTag="div"
-                                customStyle={{ margin: 0, borderRadius: 0 }}
-                                {...props}
-                              >
-                                {String(children).replace(/\n$/, "")}
-                              </SyntaxHighlighter>
-                            </div>
-                          ) : (
-                            <code
-                              className={`px-1 py-0.5 rounded-md ${msg.role === "user" ? "bg-purple-700" : "bg-gray-200 dark:bg-gray-700"
-                                } ${className || ""}`}
-                              {...props}
-                            >
-                              {children}
-                            </code>
-                          );
-                        },
-                      }}
-                    >
-                      {msg.content}
-                    </ReactMarkdown>
-                  </div>
-                  {msg.modifiedFiles && msg.modifiedFiles.length > 0 && (
-                    <div className="mt-2 pt-2 border-t border-gray-200 dark:border-gray-700">
-                      <p className="text-xs text-green-500 dark:text-green-400 font-medium mb-1 flex items-center gap-1">
-                        <svg
-                          xmlns="http://www.w3.org/2000/svg"
-                          width="11"
-                          height="11"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="2.5"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                        >
-                          <polyline points="20 6 9 17 4 12" />
-                        </svg>
-                        {msg.modifiedFiles.length} file{msg.modifiedFiles.length > 1 ? "s" : ""} written
-                      </p>
-                      <div className="flex flex-col gap-0.5">
-                        {msg.modifiedFiles.map((f) => (
-                          <button
-                            key={f}
-                            onClick={() => handleFileClick(f)}
-                            className="text-left text-xs text-blue-400 hover:text-blue-300 hover:underline truncate font-mono"
+                                return !isInline && match ? (
+                                  <div className="mt-2 mb-2 rounded-md overflow-hidden border border-gray-700">
+                                    <div className="bg-gray-800 text-gray-400 text-xs px-3 py-1 flex justify-between">
+                                      <span>{match[1]}</span>
+                                    </div>
+                                    <SyntaxHighlighter
+                                      style={vscDarkPlus as any}
+                                      language={match[1]}
+                                      PreTag="div"
+                                      customStyle={{ margin: 0, borderRadius: 0 }}
+                                      {...props}
+                                    >
+                                      {String(children).replace(/\n$/, "")}
+                                    </SyntaxHighlighter>
+                                  </div>
+                                ) : (
+                                  <code
+                                    className={`px-1 py-0.5 rounded-md ${msg.role === "user" ? "bg-purple-700" : "bg-gray-200 dark:bg-gray-700"
+                                      } ${className || ""}`}
+                                    {...props}
+                                  >
+                                    {children}
+                                  </code>
+                                );
+                              },
+                            }}
                           >
-                            📄 {f}
-                          </button>
-                        ))}
+                            {msg.content}
+                          </ReactMarkdown>
+                        </div>
+                        {msg.modifiedFiles && msg.modifiedFiles.length > 0 && (
+                          <div className="mt-2 pt-2 border-t border-gray-200 dark:border-gray-700">
+                            <p className="text-xs text-green-500 dark:text-green-400 font-medium mb-1 flex items-center gap-1">
+                              <svg
+                                xmlns="http://www.w3.org/2000/svg"
+                                width="11"
+                                height="11"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="2.5"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                              >
+                                <polyline points="20 6 9 17 4 12" />
+                              </svg>
+                              {msg.modifiedFiles.length} file{msg.modifiedFiles.length > 1 ? "s" : ""} written
+                            </p>
+                            <div className="flex flex-col gap-0.5">
+                              {msg.modifiedFiles.map((f) => (
+                                <button
+                                  key={f}
+                                  onClick={() => handleFileClick(f)}
+                                  className="text-left text-xs text-blue-400 hover:text-blue-300 hover:underline truncate font-mono"
+                                >
+                                  📄 {f}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                  {isTyping && (
+                    <div className="flex gap-3">
+                      <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center shrink-0 text-white text-xs font-bold">
+                        AI
+                      </div>
+                      <div className="bg-gray-100 dark:bg-gray-800 rounded-2xl rounded-tl-none p-4 text-sm flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
+                        <span className="w-1.5 h-1.5 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
+                        <span className="w-1.5 h-1.5 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
                       </div>
                     </div>
                   )}
                 </div>
-              </div>
-            ))}
-            {isTyping && (
-              <div className="flex gap-3">
-                <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center shrink-0 text-white text-xs font-bold">
-                  AI
+                <div className="p-4 border-t border-gray-200 dark:border-gray-800">
+                  <div className="relative">
+                    <textarea
+                      value={chatInput}
+                      onChange={(e) => setChatInput(e.target.value)}
+                      onKeyDown={handleKeyDown}
+                      placeholder="Ask the agent to do something..."
+                      className="w-full bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl pl-4 pr-12 py-3 text-sm resize-none h-20 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    />
+                    <button
+                      onClick={handleSendMessage}
+                      disabled={!chatInput.trim() || isTyping}
+                      className="absolute right-3 bottom-3 p-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:hover:bg-blue-600 text-white rounded-lg transition-colors"
+                    >
+                      <Send size={16} />
+                    </button>
+                  </div>
                 </div>
-                <div className="bg-gray-100 dark:bg-gray-800 rounded-2xl rounded-tl-none p-4 text-sm flex items-center gap-1">
-                  <span className="w-1.5 h-1.5 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
-                  <span className="w-1.5 h-1.5 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
-                  <span className="w-1.5 h-1.5 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
+              </aside>
+            </Panel>
+
+            <PanelResizeHandle className="w-1 bg-gray-200 dark:bg-gray-800 hover:bg-blue-500 cursor-col-resize transition-colors" />
+
+            <Panel defaultSize={60} minSize={30}>
+              {/* Center Panel: Editor */}
+              <section className="h-full flex flex-col min-w-0 bg-gray-50 dark:bg-[#0e0e0e]">
+                <div
+                  className="h-10 border-b border-gray-800 flex items-center overflow-x-auto overflow-y-hidden no-scrollbar"
+                  style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
+                >
+                  {openTabs.length === 0 && (
+                    <div className="px-4 text-sm text-gray-500 shrink-0">
+                      No file selected
+                    </div>
+                  )}
+
+                  {openTabs.map((path) => (
+                    <div
+                      key={path}
+                      onClick={() => {
+                        setSelectedFile(path);
+                        setEditorLanguage(getLanguageFromPath(path));
+                      }}
+                      title={path}
+                      className={`flex items-center gap-2 px-4 h-full cursor-pointer border-r border-gray-700 shrink-0 whitespace-nowrap ${selectedFile === path
+                          ? "bg-[#1e1e1e] text-white"
+                          : "bg-[#252526] text-gray-400"
+                        }`}
+                    >
+                      <FileCode size={14} className="shrink-0" />
+
+                      <span className="text-sm">
+                        {getTabLabel(path, openTabs)}
+                      </span>
+
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+
+                          const tabs = openTabs.filter((t) => t !== path);
+
+                          setOpenTabs(tabs);
+
+                          if (selectedFile === path) {
+                            if (tabs.length > 0) {
+                              setSelectedFile(tabs[tabs.length - 1]);
+                              setEditorLanguage(
+                                getLanguageFromPath(tabs[tabs.length - 1])
+                              );
+                            } else {
+                              setSelectedFile(null);
+                            }
+                          }
+                        }}
+                        className="shrink-0 hover:text-white"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ))}
                 </div>
-              </div>
-            )}
-          </div>
-          <div className="p-4 border-t border-gray-200 dark:border-gray-800">
-            <div className="relative">
-              <textarea
-                value={chatInput}
-                onChange={(e) => setChatInput(e.target.value)}
-                onKeyDown={handleKeyDown}
-                placeholder="Ask the agent to do something..."
-                className="w-full bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl pl-4 pr-12 py-3 text-sm resize-none h-20 focus:outline-none focus:ring-1 focus:ring-blue-500"
-              />
+                <div className="flex-1 relative overflow-hidden">
+                  <Editor
+                    height="100%"
+                    language={editorLanguage}
+                    theme="vs-dark"
+                    value={selectedFile ? fileContents[selectedFile] || "" : ""}
+                    onChange={(value) => {
+                      if (!selectedFile) return;
+
+                      setFileContents((prev) => ({
+                        ...prev,
+                        [selectedFile]: value || "",
+                      }));
+                    }}
+                    options={{
+                      minimap: { enabled: false },
+                      fontSize: 14,
+                      wordWrap: "on",
+                      lineNumbers: "on",
+                      scrollBeyondLastLine: false,
+                      padding: { top: 16 },
+                      fontFamily: "var(--font-mono)",
+                    }}
+                    loading={<div className="p-6 text-gray-500">Loading editor...</div>}
+                  />
+                </div>
+              </section>
+            </Panel>
+
+            <PanelResizeHandle className="w-1 bg-gray-200 dark:bg-gray-800 hover:bg-blue-500 cursor-col-resize transition-colors" />
+
+            <Panel
+              ref={repoPanelRef}
+              defaultSize={20}
+              minSize={15}
+              maxSize={35}
+              collapsible
+              collapsedSize={0}
+              onCollapse={() => setIsRepoCollapsed(true)}
+              onExpand={() => setIsRepoCollapsed(false)}
+            >
+              {/* Right Panel: File Explorer */}
+              <aside className="h-full border-l border-gray-200 dark:border-gray-800 bg-white dark:bg-[#151515] flex flex-col">
+                <div className="h-12 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between px-4">
+                  <h2 className="text-sm font-semibold flex items-center gap-2">
+                    <Folder size={16} />
+                    Repository
+                  </h2>
+                  <button
+                    onClick={() => {
+                      setIsLoadingFiles(true);
+                      fetch(`http://localhost:8000/api/v1/projects/${projectId}/files`)
+                        .then((r) => r.json())
+                        .then((json) => {
+                          if (json.success) setFileTree(json.data || []);
+                        })
+                        .catch(() => { })
+                        .finally(() => setIsLoadingFiles(false));
+                    }}
+                    className="p-1 text-gray-400 hover:text-gray-200 rounded transition-colors"
+                    title="Refresh files"
+                  >
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      width="13"
+                      height="13"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <path d="M21 2v6h-6" />
+                      <path d="M3 12a9 9 0 0 1 15-6.7L21 8" />
+                      <path d="M3 22v-6h6" />
+                      <path d="M21 12a9 9 0 0 1-15 6.7L3 16" />
+                    </svg>
+                  </button>
+                </div>
+                <div className="flex-1 py-2 overflow-y-auto text-sm">
+                  {isLoadingFiles ? (
+                    <div className="flex items-center justify-center h-20">
+                      <Loader2 size={16} className="animate-spin text-gray-400" />
+                    </div>
+                  ) : fileTree.length === 0 ? (
+                    <div className="px-4 py-8 text-center">
+                      <FileCode size={32} className="text-gray-600 mx-auto mb-2" />
+                      <p className="text-xs text-gray-500">No files yet.</p>
+                      <p className="text-xs text-gray-600 mt-1">Ask the AI agent to create some!</p>
+                    </div>
+                  ) : (
+                    fileTree.map((node) => (
+                      <FileNodeItem
+                        key={node.path}
+                        node={node}
+                        depth={0}
+                        selectedPath={selectedFile}
+                        onFileClick={handleFileClick}
+                      />
+                    ))
+                  )}
+                </div>
+              </aside>
+            </Panel>
+          </PanelGroup>
+        </Panel>
+
+        <PanelResizeHandle className="h-1 bg-gray-200 dark:bg-gray-800 hover:bg-blue-500 cursor-row-resize transition-colors" />
+
+        <Panel
+          ref={terminalPanelRef}
+          defaultSize={25}
+          minSize={10}
+          maxSize={60}
+          collapsible
+          collapsedSize={0}
+          onCollapse={() => setIsTerminalCollapsed(true)}
+          onExpand={() => setIsTerminalCollapsed(false)}
+        >
+          {/* Bottom Panel: Terminal/Logs */}
+          <footer className="h-full border-t border-gray-200 dark:border-gray-800 bg-white dark:bg-[#111111] flex flex-col">
+            <div className="h-10 border-b border-gray-200 dark:border-gray-800 flex items-center px-2 gap-1 overflow-x-auto no-scrollbar">
+              {terminals.map((t) => (
+                <div
+                  key={t.id}
+                  onClick={() => setActiveTerminalId(t.id)}
+                  className={`flex items-center gap-2 px-3 py-1.5 rounded-md cursor-pointer text-xs shrink-0 whitespace-nowrap ${activeTerminalId === t.id
+                      ? "bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-white"
+                      : "text-gray-500 hover:text-gray-800 dark:hover:text-gray-300"
+                    }`}
+                >
+                  <Terminal size={13} />
+                  <span>{t.label}</span>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      closeTerminal(t.id);
+                    }}
+                    className="hover:text-red-400"
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))}
               <button
-                onClick={handleSendMessage}
-                disabled={!chatInput.trim() || isTyping}
-                className="absolute right-3 bottom-3 p-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:hover:bg-blue-600 text-white rounded-lg transition-colors"
+                onClick={createTerminal}
+                title="New terminal"
+                className="ml-1 p-1.5 rounded-md text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors shrink-0"
               >
-                <Send size={16} />
+                +
               </button>
             </div>
-          </div>
-        </aside>
-
-        {/* Center Panel: Editor */}
-        <section className="flex-1 flex flex-col min-w-0 bg-gray-50 dark:bg-[#0e0e0e]">
-          <div className="h-10 border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-[#1a1a1a] flex items-center px-2">
-            <div className="flex items-center gap-2 px-4 py-1.5 bg-gray-100 dark:bg-[#0e0e0e] rounded-t-lg border-t border-x border-gray-200 dark:border-gray-800 text-sm mt-2">
-              <FileCode size={14} className="text-blue-500" />
-              <span className="truncate max-w-[180px]" title={selectedFile ?? undefined}>
-                {getFileNameFromPath(selectedFile)}
-              </span>
+            <div className="flex-1 overflow-hidden relative">
+              {terminals.length === 0 ? (
+                <div className="flex items-center justify-center h-full text-gray-500 text-xs">
+                  No terminal open. Click + to create one.
+                </div>
+              ) : (
+                terminals.map((t) => (
+                  <div
+                    key={t.id}
+                    className="absolute inset-0"
+                    style={{ display: activeTerminalId === t.id ? "block" : "none" }}
+                  >
+                    <IDETerminal sessionId={t.sessionId} />
+                  </div>
+                ))
+              )}
             </div>
-          </div>
-          <div className="flex-1 relative overflow-hidden">
-            <Editor
-              height="100%"
-              language={editorLanguage}
-              theme="vs-dark"
-              value={editorContent}
-              onChange={(value) => setEditorContent(value || "")}
-              options={{
-                minimap: { enabled: false },
-                fontSize: 14,
-                wordWrap: "on",
-                lineNumbers: "on",
-                scrollBeyondLastLine: false,
-                padding: { top: 16 },
-                fontFamily: "var(--font-mono)",
-              }}
-              loading={<div className="p-6 text-gray-500">Loading editor...</div>}
-            />
-          </div>
-        </section>
-
-        {/* Right Panel: File Explorer */}
-        <aside className="w-64 border-l border-gray-200 dark:border-gray-800 bg-white dark:bg-[#151515] hidden lg:flex flex-col shrink-0">
-          <div className="h-12 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between px-4">
-            <h2 className="text-sm font-semibold flex items-center gap-2">
-              <Folder size={16} />
-              Repository
-            </h2>
-            <button
-              onClick={() => {
-                setIsLoadingFiles(true);
-                fetch(`http://localhost:8000/api/v1/projects/${projectId}/files`)
-                  .then((r) => r.json())
-                  .then((json) => {
-                    if (json.success) setFileTree(json.data || []);
-                  })
-                  .catch(() => { })
-                  .finally(() => setIsLoadingFiles(false));
-              }}
-              className="p-1 text-gray-400 hover:text-gray-200 rounded transition-colors"
-              title="Refresh files"
-            >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                width="13"
-                height="13"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <path d="M21 2v6h-6" />
-                <path d="M3 12a9 9 0 0 1 15-6.7L21 8" />
-                <path d="M3 22v-6h6" />
-                <path d="M21 12a9 9 0 0 1-15 6.7L3 16" />
-              </svg>
-            </button>
-          </div>
-          <div className="flex-1 py-2 overflow-y-auto text-sm">
-            {isLoadingFiles ? (
-              <div className="flex items-center justify-center h-20">
-                <Loader2 size={16} className="animate-spin text-gray-400" />
-              </div>
-            ) : fileTree.length === 0 ? (
-              <div className="px-4 py-8 text-center">
-                <FileCode size={32} className="text-gray-600 mx-auto mb-2" />
-                <p className="text-xs text-gray-500">No files yet.</p>
-                <p className="text-xs text-gray-600 mt-1">Ask the AI agent to create some!</p>
-              </div>
-            ) : (
-              fileTree.map((node) => (
-                <FileNodeItem
-                  key={node.path}
-                  node={node}
-                  depth={0}
-                  selectedPath={selectedFile}
-                  onFileClick={handleFileClick}
-                />
-              ))
-            )}
-          </div>
-        </aside>
-      </main>
-
-      {/* Bottom Panel: Terminal/Logs */}
-      <footer className="h-48 border-t border-gray-200 dark:border-gray-800 bg-white dark:bg-[#111111] flex flex-col shrink-0">
-        <div className="h-10 border-b border-gray-200 dark:border-gray-800 flex items-center px-4 gap-4">
-          <button className="text-sm font-medium text-gray-900 dark:text-white flex items-center gap-2 border-b-2 border-blue-500 h-full">
-            <Terminal size={14} />
-            Terminal
-          </button>
-          <button className="text-sm font-medium text-gray-500 hover:text-gray-900 dark:hover:text-white flex items-center gap-2 h-full transition-colors">
-            Agent Logs
-          </button>
-        </div>
-        <div className="flex-1 overflow-auto">
-          {terminalSession ? (
-            <IDETerminal sessionId={terminalSession} />
-          ) : (
-            <div className="flex items-center justify-center h-full text-gray-500 text-xs">
-              Creating terminal...
-            </div>
-          )}
-        </div>
-      </footer>
+          </footer>
+        </Panel>
+      </PanelGroup>
     </div>
   );
 }

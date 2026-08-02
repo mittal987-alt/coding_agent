@@ -36,17 +36,12 @@ export default function IDETerminal({
       terminal.focus();
     });
 
-    divRef.current.addEventListener("click", () => {
-      terminal.focus();
-    });
+    const focusHandler = () => terminal.focus();
+    divRef.current.addEventListener("click", focusHandler);
 
-    const socket = new WebSocket(
-      `ws://localhost:8000/ws/${sessionId}`
-    );
+    const socket = new WebSocket(`ws://localhost:8000/ws/${sessionId}`);
 
     socket.onopen = () => {
-      console.log("WebSocket connected");
-
       setTimeout(() => {
         fitAddon.fit();
         terminal.focus();
@@ -66,8 +61,6 @@ export default function IDETerminal({
     };
 
     terminal.onData((data) => {
-      console.log("Typed:", JSON.stringify(data));
-
       if (socket.readyState === WebSocket.OPEN) {
         socket.send(data);
       }
@@ -88,8 +81,14 @@ export default function IDETerminal({
     return () => {
       observer.disconnect();
       window.removeEventListener("resize", resize);
+      divRef.current?.removeEventListener("click", focusHandler);
 
-      socket.close();
+      if (
+        socket.readyState === WebSocket.OPEN ||
+        socket.readyState === WebSocket.CONNECTING
+      ) {
+        socket.close();
+      }
 
       terminal.dispose();
     };

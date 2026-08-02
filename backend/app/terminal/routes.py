@@ -24,7 +24,7 @@ def create_terminal(
 
     session = terminal_manager.create(
         cwd=str(repo_path),
-        name=project.name,
+        project_name=project.name,
     )
 
     return {

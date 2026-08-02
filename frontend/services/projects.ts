@@ -1,4 +1,4 @@
-import apiClient from "@/lib/api";
+ import apiClient from "@/lib/api";
 
 export interface Project {
   id: string;
@@ -34,7 +34,8 @@ export const ProjectService = {
   },
 
   getProject: async (id: string | number): Promise<Project> => {
-    const response = await apiClient.get<ApiResponse<Project>>(`/projects/${id}/`);
+    // No trailing slash — backend route is GET /{project_id}, not /{project_id}/
+    const response = await apiClient.get<ApiResponse<Project>>(`/projects/${id}`);
     return response.data.data;
   },
 
@@ -44,6 +45,7 @@ export const ProjectService = {
   },
 
   deleteProject: async (id: string | number): Promise<void> => {
-    await apiClient.delete<ApiResponse<null>>(`/projects/${id}/`);
+    // No trailing slash — backend route is DELETE /{project_id}, not /{project_id}/
+    await apiClient.delete<ApiResponse<null>>(`/projects/${id}`);
   },
 };

@@ -10,6 +10,7 @@ export default function ProjectsPage() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const fetchProjects = async () => {
     setIsLoading(true);
@@ -30,6 +31,46 @@ export default function ProjectsPage() {
   const handleCreateProject = async (data: ProjectCreate) => {
     await ProjectService.createProject(data);
     await fetchProjects(); // Refresh the list
+  };
+
+  const handleDeleteProject = async (projectId: string) => {
+    // Guard against double-invocation (double-click, re-render, duplicate
+    // event firing, etc.) — if a delete for this exact project is already
+    // in flight, ignore the second call instead of sending another DELETE.
+    if (deletingId === projectId) return;
+
+    const confirmed = window.confirm(
+      "Delete this project? This will permanently remove it and its uploaded files. This cannot be undone."
+    );
+    if (!confirmed) return;
+
+    setDeletingId(projectId);
+
+    // Optimistically remove from the list so it disappears immediately
+    const previousProjects = projects;
+    setProjects((prev) => prev.filter((p) => p.id !== projectId));
+
+    try {
+      await ProjectService.deleteProject(projectId);
+      // Re-sync with backend to be safe (in case deletion partially failed server-side)
+      await fetchProjects();
+    } catch (error: any) {
+      // If the backend says it's already gone (404), treat it as a
+      // successful outcome rather than a failure — the project is deleted
+      // either way, this was likely just a duplicate request.
+      const status = error?.response?.status;
+      if (status === 404) {
+        console.warn("Project already deleted (likely a duplicate request).");
+        return;
+      }
+
+      console.error("Failed to delete project:", error);
+      // Roll back the optimistic removal so it doesn't silently vanish on a real failure
+      setProjects(previousProjects);
+      alert("Failed to delete project. Check the console/backend logs for details.");
+    } finally {
+      setDeletingId(null);
+    }
   };
 
   return (
@@ -78,7 +119,12 @@ export default function ProjectsPage() {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
             {projects.map((project) => (
-              <ProjectCard key={project.id} project={project} />
+              <ProjectCard
+                key={project.id}
+                project={project}
+                onDelete={handleDeleteProject}
+                isDeleting={deletingId === project.id}
+              />
             ))}
           </div>
         )}
