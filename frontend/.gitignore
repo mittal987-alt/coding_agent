@@ -9,7 +9,7 @@
 !.yarn/plugins
 !.yarn/releases
 !.yarn/versions
-
+backend/storage/projects/
 # testing
 /coverage
 

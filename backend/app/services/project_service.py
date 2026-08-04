@@ -1,3 +1,4 @@
+from app.schema.project import ProjectUpdate
 import logging
 import re
 import subprocess
@@ -166,6 +167,24 @@ class ProjectService:
 
     def get_project(self, project_id):
         return self.repository.get_by_id(project_id)
+
+    def update_project(self, project, update_data):
+        """Apply a partial update (dict or Pydantic model) to a project."""
+        if hasattr(update_data, "model_dump"):
+            update_data = update_data.model_dump(exclude_unset=True)
+        for field, value in update_data.items():
+            if hasattr(project, field) and value is not None:
+                setattr(project, field, value)
+        self.repository.commit()
+        self.repository.refresh(project)
+        return project
+
+def update_project(self, project, updates: "ProjectUpdate"):
+    data = updates.model_dump(exclude_unset=True)
+    for field, value in data.items():
+        setattr(project, field, value)
+    self.repository.commit()
+    return project
 
     def delete_project(self, project):
         try:

@@ -4,7 +4,7 @@ import uuid
 from typing import TYPE_CHECKING, List
 
 from sqlalchemy import Boolean, ForeignKey, String
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import BaseModel
@@ -27,6 +27,8 @@ class Project(BaseModel):
     language: Mapped[str | None] = mapped_column(String(50), nullable=True)
     framework: Mapped[str | None] = mapped_column(String(100), nullable=True)
     archived: Mapped[bool] = mapped_column(Boolean, default=False)
+    llm_model: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    env_vars: Mapped[dict | None] = mapped_column(JSONB, nullable=True, default=None)
 
     # Relationships
     workspaces: Mapped[List["Workspace"]] = relationship("Workspace", back_populates="project", cascade="all, delete-orphan")

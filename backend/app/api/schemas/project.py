@@ -6,7 +6,7 @@ from typing import Any, Literal
 
 from pydantic import Field, field_validator
 
-from app.api.schemas.base import BaseSchema
+from app.api.schemas.base_schema import BaseSchema
 from app.models.workspace import ProjectVisibility
 
 

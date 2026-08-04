@@ -31,8 +31,24 @@ export default function IDETerminal({
 
     terminal.open(divRef.current);
 
+    // xterm can't compute cell/font dimensions on a zero-size container
+    // (e.g. one hidden via display:none, or not yet laid out). Guard every
+    // fit() call so a stray resize/observer tick never crashes on an
+    // undefined `dimensions` read inside xterm's renderer.
+    const safeFit = () => {
+      const el = divRef.current;
+      if (!el || el.offsetWidth === 0 || el.offsetHeight === 0) return;
+      if (!terminal.element) return;
+      try {
+        fitAddon.fit();
+      } catch (err) {
+        // Swallow fit races (e.g. mid-dispose) instead of crashing the tree.
+        console.warn("Terminal fit skipped:", err);
+      }
+    };
+
     requestAnimationFrame(() => {
-      fitAddon.fit();
+      safeFit();
       terminal.focus();
     });
 
@@ -43,7 +59,7 @@ export default function IDETerminal({
 
     socket.onopen = () => {
       setTimeout(() => {
-        fitAddon.fit();
+        safeFit();
         terminal.focus();
       }, 100);
     };
@@ -67,13 +83,13 @@ export default function IDETerminal({
     });
 
     const resize = () => {
-      fitAddon.fit();
+      safeFit();
     };
 
     window.addEventListener("resize", resize);
 
     const observer = new ResizeObserver(() => {
-      fitAddon.fit();
+      safeFit();
     });
 
     observer.observe(divRef.current);

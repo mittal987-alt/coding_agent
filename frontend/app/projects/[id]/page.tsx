@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, Loader2, MessageSquare, Terminal, FileCode, Play, Folder, Settings, Send, PanelLeft, PanelRight, PanelBottom } from "lucide-react";
+import { ArrowLeft, Loader2, MessageSquare, Terminal, FileCode, Play, Folder, Settings, Send, PanelLeft, PanelRight, PanelBottom, Save } from "lucide-react";
 import { ProjectService, Project } from "@/services/projects";
 import Link from "next/link";
 import ReactMarkdown from "react-markdown";
@@ -17,7 +17,9 @@ import {
   PanelResizeHandle,
   ImperativePanelHandle,
 } from "react-resizable-panels";
-
+import { ProjectSettingsModal } from "@/components/ProjectSettingsModal";
+import { SearchModal } from "@/components/SearchModal";
+import { KeyboardShortcutsModal } from "@/components/KeyboardShortcutsModal";
 const IDETerminal = dynamic(
   () => import("@/components/terminal"),
   {
@@ -32,11 +34,14 @@ type Message = {
   modifiedFiles?: string[];
 };
 
+type FileStatus = "modified" | "untracked" | "staged" | "deleted";
+
 type FileNode = {
   name: string;
   path: string;
   type: "file" | "directory";
   children?: FileNode[];
+  status?: FileStatus;
 };
 
 type TerminalSession = {
@@ -45,8 +50,30 @@ type TerminalSession = {
   label: string;
 };
 
+const SUGGESTED_PROMPTS = [
+  "Set up the project structure",
+  "Add a login page",
+  "Explain this repo",
+  "Fix the last error",
+];
+
 function normalizePath(path: string): string {
   return path.replace(/^\/+/, "").replace(/\/+/g, "/").trim();
+}
+
+function applyGitStatus(
+  nodes: FileNode[],
+  statuses: Record<string, string>
+): FileNode[] {
+  return nodes.map((node) => {
+    if (node.type === "file") {
+      return { ...node, status: (statuses[node.path] as FileStatus) || undefined };
+    }
+    return {
+      ...node,
+      children: node.children ? applyGitStatus(node.children, statuses) : undefined,
+    };
+  });
 }
 
 function getLanguageFromPath(path: string): string {
@@ -73,6 +100,36 @@ function getTabLabel(path: string, allOpenPaths: string[]): string {
   const parts = path.split("/");
   const parent = parts.length > 1 ? parts[parts.length - 2] : "";
   return parent ? `${parent}/${name}` : name;
+}
+
+function statusColor(status?: FileStatus): string {
+  switch (status) {
+    case "modified":
+      return "text-yellow-500";
+    case "untracked":
+      return "text-green-500";
+    case "staged":
+      return "text-blue-400";
+    case "deleted":
+      return "text-red-500";
+    default:
+      return "";
+  }
+}
+
+function statusLetter(status?: FileStatus): string {
+  switch (status) {
+    case "modified":
+      return "M";
+    case "untracked":
+      return "U";
+    case "staged":
+      return "A";
+    case "deleted":
+      return "D";
+    default:
+      return "";
+  }
 }
 
 function FileNodeItem({
@@ -123,6 +180,11 @@ function FileNodeItem({
     >
       <FileCode size={13} className={isSelected ? "text-blue-400" : "text-gray-400"} />
       <span className="truncate">{node.name}</span>
+      {node.status && (
+        <span className={`ml-auto text-[10px] font-bold shrink-0 ${statusColor(node.status)}`}>
+          {statusLetter(node.status)}
+        </span>
+      )}
     </button>
   );
 }
@@ -156,6 +218,9 @@ export default function WorkspacePage() {
   const [isChatCollapsed, setIsChatCollapsed] = useState(false);
   const [isRepoCollapsed, setIsRepoCollapsed] = useState(false);
   const [isTerminalCollapsed, setIsTerminalCollapsed] = useState(false);
+  const [isSavingFile, setIsSavingFile] = useState(false);
+  const [fileSaveMsg, setFileSaveMsg] = useState<string | null>(null);
+  const chatEndRef = useRef<HTMLDivElement>(null);
 
   const toggleChatPanel = () => {
     const panel = chatPanelRef.current;
@@ -186,12 +251,52 @@ export default function WorkspacePage() {
     },
   ]);
 
-  // Dedupe-safe tab opener: always checks the LATEST state via the functional
-  // updater, so concurrent/rapid calls (e.g. agent touching the same file
-  // across multiple replies) can never create duplicate tabs.
+  // Dedupe-safe tab opener
   const openTab = (path: string) => {
     setOpenTabs((prev) => (prev.includes(path) ? prev : [...prev, path]));
   };
+
+  // Auto-scroll chat to bottom
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, isTyping]);
+
+  // Save current file to backend
+  const saveCurrentFile = useCallback(async () => {
+    if (!selectedFile) return;
+    const content = fileContents[selectedFile];
+    if (content === undefined) return;
+    setIsSavingFile(true);
+    try {
+      await fetch(
+        `http://localhost:8000/api/v1/projects/${projectId}/files/content?path=${encodeURIComponent(selectedFile)}`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ content }),
+        }
+      );
+      setFileSaveMsg("Saved");
+      setTimeout(() => setFileSaveMsg(null), 2000);
+    } catch {
+      setFileSaveMsg("Save failed");
+      setTimeout(() => setFileSaveMsg(null), 2500);
+    } finally {
+      setIsSavingFile(false);
+    }
+  }, [selectedFile, fileContents, projectId]);
+
+  // Keyboard shortcut: Ctrl+S / Cmd+S to save
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === "s") {
+        e.preventDefault();
+        saveCurrentFile();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [saveCurrentFile]);
 
   const createTerminal = async () => {
     try {
@@ -232,10 +337,10 @@ export default function WorkspacePage() {
     });
   };
 
-  const handleSendMessage = async () => {
-    if (!chatInput.trim()) return;
+  const sendPrompt = async (text: string) => {
+    if (!text.trim()) return;
 
-    const userContent = chatInput;
+    const userContent = text;
     const newUserMsg: Message = {
       id: Date.now().toString(),
       role: "user",
@@ -296,6 +401,11 @@ export default function WorkspacePage() {
     }
   };
 
+  const handleSendMessage = async () => {
+    if (!chatInput.trim()) return;
+    await sendPrompt(chatInput);
+  };
+
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
@@ -344,6 +454,17 @@ export default function WorkspacePage() {
     }
   };
 
+  const refreshFileTree = () => {
+    setIsLoadingFiles(true);
+    fetch(`http://localhost:8000/api/v1/projects/${projectId}/files`)
+      .then((r) => r.json())
+      .then((json) => {
+        if (json.success) setFileTree(json.data || []);
+      })
+      .catch(() => {})
+      .finally(() => setIsLoadingFiles(false));
+  };
+
   useEffect(() => {
     const fetchProject = async () => {
       try {
@@ -375,6 +496,21 @@ export default function WorkspacePage() {
       fetchProject();
       fetchFileTree();
       createTerminal();
+
+      // Poll git status every 8 s to keep file badge indicators fresh
+      const gitPoll = setInterval(() => {
+        fetch(`http://localhost:8000/api/v1/projects/${projectId}/git/status`)
+          .then((r) => r.json())
+          .then((json) => {
+            if (json.success && json.data) {
+              setFileTree((prev) =>
+                applyGitStatus(prev, json.data as Record<string, string>)
+              );
+            }
+          })
+          .catch(() => {});
+      }, 8000);
+      return () => clearInterval(gitPoll);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
@@ -414,11 +550,8 @@ export default function WorkspacePage() {
             <ArrowLeft size={18} />
           </Link>
           <div className="flex flex-col">
-            <h1 className="text-sm font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+            <h1 className="text-sm font-semibold text-gray-900 dark:text-white">
               {project.name}
-              <span className="px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 text-xs font-medium uppercase tracking-wider">
-                {project.llm_model || "Mistral"}
-              </span>
             </h1>
             <span className="text-xs text-gray-500 dark:text-gray-400">
               {project.repository_url || "Local Workspace"}
@@ -426,9 +559,14 @@ export default function WorkspacePage() {
           </div>
         </div>
         <div className="flex items-center gap-3">
+          {/* Unified status pill: agent state + model, one place to look */}
           <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-800 px-3 py-1.5 rounded-full">
-            <span className="w-2 h-2 rounded-full bg-green-500"></span>
+            <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
             Agent Idle
+            <span className="w-px h-3 bg-gray-300 dark:bg-gray-700 mx-1" />
+            <span className="text-blue-500 dark:text-blue-400 font-medium uppercase tracking-wide">
+              {project.llm_model || "Mistral"}
+            </span>
           </div>
           <div className="flex items-center gap-1 bg-gray-100 dark:bg-gray-800 rounded-lg p-1">
             <button
@@ -462,9 +600,13 @@ export default function WorkspacePage() {
               <PanelRight size={15} />
             </button>
           </div>
-          <button className="p-2 text-gray-500 hover:text-gray-900 dark:hover:text-white transition-colors">
+          <Link
+            href={`/projects/${projectId}/settings`}
+            title="Settings"
+            className="p-2 text-gray-500 hover:text-gray-900 dark:hover:text-white transition-colors"
+          >
             <Settings size={18} />
-          </button>
+          </Link>
         </div>
       </header>
 
@@ -577,6 +719,22 @@ export default function WorkspacePage() {
                       </div>
                     </div>
                   ))}
+
+                  {/* Suggested prompts shown only before the conversation has started */}
+                  {messages.length === 1 && !isTyping && (
+                    <div className="flex flex-wrap gap-2 pl-11">
+                      {SUGGESTED_PROMPTS.map((s) => (
+                        <button
+                          key={s}
+                          onClick={() => sendPrompt(s)}
+                          className="text-xs px-3 py-1.5 rounded-full border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:border-blue-500 hover:text-blue-400 transition-colors"
+                        >
+                          {s}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
                   {isTyping && (
                     <div className="flex gap-3">
                       <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center shrink-0 text-white text-xs font-bold">
@@ -589,6 +747,7 @@ export default function WorkspacePage() {
                       </div>
                     </div>
                   )}
+                  <div ref={chatEndRef} />
                 </div>
                 <div className="p-4 border-t border-gray-200 dark:border-gray-800">
                   <div className="relative">
@@ -620,6 +779,22 @@ export default function WorkspacePage() {
                   className="h-10 border-b border-gray-800 flex items-center overflow-x-auto overflow-y-hidden no-scrollbar"
                   style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
                 >
+                  {/* Save button — only when a file is open */}
+                  {selectedFile && (
+                    <button
+                      onClick={saveCurrentFile}
+                      disabled={isSavingFile}
+                      title="Save file (Ctrl+S)"
+                      className="shrink-0 flex items-center gap-1.5 px-3 h-full text-xs border-r border-gray-700 text-gray-400 hover:text-white transition-colors disabled:opacity-50"
+                    >
+                      {isSavingFile ? (
+                        <Loader2 size={13} className="animate-spin" />
+                      ) : (
+                        <Save size={13} />
+                      )}
+                      {fileSaveMsg ?? "Save"}
+                    </button>
+                  )}
                   {openTabs.length === 0 && (
                     <div className="px-4 text-sm text-gray-500 shrink-0">
                       No file selected
@@ -672,30 +847,38 @@ export default function WorkspacePage() {
                   ))}
                 </div>
                 <div className="flex-1 relative overflow-hidden">
-                  <Editor
-                    height="100%"
-                    language={editorLanguage}
-                    theme="vs-dark"
-                    value={selectedFile ? fileContents[selectedFile] || "" : ""}
-                    onChange={(value) => {
-                      if (!selectedFile) return;
-
-                      setFileContents((prev) => ({
-                        ...prev,
-                        [selectedFile]: value || "",
-                      }));
-                    }}
-                    options={{
-                      minimap: { enabled: false },
-                      fontSize: 14,
-                      wordWrap: "on",
-                      lineNumbers: "on",
-                      scrollBeyondLastLine: false,
-                      padding: { top: 16 },
-                      fontFamily: "var(--font-mono)",
-                    }}
-                    loading={<div className="p-6 text-gray-500">Loading editor...</div>}
-                  />
+                  {selectedFile ? (
+                    <Editor
+                      height="100%"
+                      language={editorLanguage}
+                      theme="vs-dark"
+                      value={fileContents[selectedFile] || ""}
+                      onChange={(value) => {
+                        setFileContents((prev) => ({
+                          ...prev,
+                          [selectedFile]: value || "",
+                        }));
+                      }}
+                      options={{
+                        minimap: { enabled: false },
+                        fontSize: 14,
+                        wordWrap: "on",
+                        lineNumbers: "on",
+                        scrollBeyondLastLine: false,
+                        padding: { top: 16 },
+                        fontFamily: "var(--font-mono)",
+                      }}
+                      loading={<div className="p-6 text-gray-500">Loading editor...</div>}
+                    />
+                  ) : (
+                    <div className="h-full flex flex-col items-center justify-center text-center px-8">
+                      <FileCode size={40} className="text-gray-700 mb-3" />
+                      <p className="text-sm text-gray-500 mb-1">No file open</p>
+                      <p className="text-xs text-gray-600 max-w-xs">
+                        Select a file from the repository panel, or ask the AI agent to create one for you.
+                      </p>
+                    </div>
+                  )}
                 </div>
               </section>
             </Panel>
@@ -720,16 +903,7 @@ export default function WorkspacePage() {
                     Repository
                   </h2>
                   <button
-                    onClick={() => {
-                      setIsLoadingFiles(true);
-                      fetch(`http://localhost:8000/api/v1/projects/${projectId}/files`)
-                        .then((r) => r.json())
-                        .then((json) => {
-                          if (json.success) setFileTree(json.data || []);
-                        })
-                        .catch(() => { })
-                        .finally(() => setIsLoadingFiles(false));
-                    }}
+                    onClick={refreshFileTree}
                     className="p-1 text-gray-400 hover:text-gray-200 rounded transition-colors"
                     title="Refresh files"
                   >
@@ -826,15 +1000,28 @@ export default function WorkspacePage() {
             </div>
             <div className="flex-1 overflow-hidden relative">
               {terminals.length === 0 ? (
-                <div className="flex items-center justify-center h-full text-gray-500 text-xs">
-                  No terminal open. Click + to create one.
+                <div className="flex flex-col items-center justify-center h-full text-center gap-2">
+                  <Terminal size={28} className="text-gray-700" />
+                  <p className="text-xs text-gray-500">No terminal open</p>
+                  <button
+                    onClick={createTerminal}
+                    className="text-xs text-blue-400 hover:underline"
+                  >
+                    Start one
+                  </button>
                 </div>
               ) : (
                 terminals.map((t) => (
                   <div
                     key={t.id}
                     className="absolute inset-0"
-                    style={{ display: activeTerminalId === t.id ? "block" : "none" }}
+                    style={{
+                      // visibility (not display:none) keeps the container's
+                      // real size intact while hidden, which xterm needs to
+                      // compute cell/font dimensions without crashing.
+                      visibility: activeTerminalId === t.id ? "visible" : "hidden",
+                      pointerEvents: activeTerminalId === t.id ? "auto" : "none",
+                    }}
                   >
                     <IDETerminal sessionId={t.sessionId} />
                   </div>

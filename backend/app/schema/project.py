@@ -1,6 +1,6 @@
 from pydantic import BaseModel
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Dict, Any
 
 
 import uuid
@@ -12,6 +12,15 @@ class ProjectCreate(BaseModel):
     framework: Optional[str] = None
 
 
+class ProjectUpdate(BaseModel):
+    name: Optional[str] = None
+    repository_url: Optional[str] = None
+    llm_model: Optional[str] = None
+    language: Optional[str] = None
+    framework: Optional[str] = None
+    archived: Optional[bool] = None
+
+
 class ProjectResponse(BaseModel):
     id: uuid.UUID
     owner_id: Optional[uuid.UUID] = None
@@ -21,6 +30,7 @@ class ProjectResponse(BaseModel):
     default_branch: Optional[str] = None
     language: Optional[str] = None
     framework: Optional[str] = None
+    llm_model: Optional[str] = None
     archived: bool = False
     created_at: datetime
     updated_at: datetime
