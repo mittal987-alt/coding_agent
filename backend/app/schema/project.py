@@ -7,6 +7,7 @@ import uuid
 
 class ProjectCreate(BaseModel):
     name: str
+    description: Optional[str] = None
     repository_url: Optional[str] = None
     language: Optional[str] = None
     framework: Optional[str] = None
@@ -14,6 +15,7 @@ class ProjectCreate(BaseModel):
 
 class ProjectUpdate(BaseModel):
     name: Optional[str] = None
+    description: Optional[str] = None
     repository_url: Optional[str] = None
     llm_model: Optional[str] = None
     language: Optional[str] = None
@@ -26,6 +28,7 @@ class ProjectResponse(BaseModel):
     owner_id: Optional[uuid.UUID] = None
     name: str
     slug: str
+    description: Optional[str] = None
     repository_url: Optional[str] = None
     default_branch: Optional[str] = None
     language: Optional[str] = None

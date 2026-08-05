@@ -7,6 +7,7 @@ from fastapi import Depends, HTTPException, Request
 
 from app.bootstrap.application import Application
 from app.bootstrap.container import ServiceContainer
+from app.services.workspace_service import WorkspaceService
 
 def get_application(
     request: Request,
@@ -163,3 +164,6 @@ def get_agent(
         )
 
     return dependency
+
+
+WorkspaceDep = Annotated[WorkspaceService, Depends(get_workspace)]

@@ -2,7 +2,7 @@
 
 import React, { useEffect, useRef, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, Loader2, MessageSquare, Terminal, FileCode, Play, Folder, Settings, Send, PanelLeft, PanelRight, PanelBottom, Save } from "lucide-react";
+import { ArrowLeft, Loader2, MessageSquare, Terminal, FileCode, Play, Folder, Settings, Send, PanelLeft, PanelRight, PanelBottom, Save, GitBranch, Search } from "lucide-react";
 import { ProjectService, Project } from "@/services/projects";
 import Link from "next/link";
 import ReactMarkdown from "react-markdown";
@@ -20,6 +20,8 @@ import {
 import { ProjectSettingsModal } from "@/components/ProjectSettingsModal";
 import { SearchModal } from "@/components/SearchModal";
 import { KeyboardShortcutsModal } from "@/components/KeyboardShortcutsModal";
+import GitPanel from "@/components/GitPanel";
+import SearchPanel from "@/components/SearchPanel";
 const IDETerminal = dynamic(
   () => import("@/components/terminal"),
   {
@@ -189,6 +191,105 @@ function FileNodeItem({
   );
 }
 
+// ---------------------------------------------------------------------------
+// Flat list of all file paths for the fuzzy file finder
+// ---------------------------------------------------------------------------
+function flattenPaths(nodes: FileNode[]): string[] {
+  const out: string[] = [];
+  for (const n of nodes) {
+    if (n.type === "file") out.push(n.path);
+    if (n.children) out.push(...flattenPaths(n.children));
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// Fuzzy file finder modal (Ctrl+P)
+// ---------------------------------------------------------------------------
+function FileFinder({
+  paths,
+  onSelect,
+  onClose,
+}: {
+  paths: string[];
+  onSelect: (path: string) => void;
+  onClose: () => void;
+}) {
+  const [query, setQuery] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [cursor, setCursor] = useState(0);
+
+  const filtered = query
+    ? paths.filter((p) => p.toLowerCase().includes(query.toLowerCase())).slice(0, 20)
+    : paths.slice(0, 20);
+
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, []);
+
+  useEffect(() => {
+    setCursor(0);
+  }, [query]);
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setCursor((c) => Math.min(c + 1, filtered.length - 1));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setCursor((c) => Math.max(c - 1, 0));
+    } else if (e.key === "Enter") {
+      if (filtered[cursor]) onSelect(filtered[cursor]);
+    } else if (e.key === "Escape") {
+      onClose();
+    }
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-start justify-center pt-24 bg-black/60 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <div
+        className="w-[560px] bg-[#1e1e1e] border border-gray-700 rounded-xl shadow-2xl overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center gap-2 px-4 py-3 border-b border-gray-700">
+          <Search size={15} className="text-gray-400 shrink-0" />
+          <input
+            ref={inputRef}
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder="Go to file…"
+            className="flex-1 bg-transparent outline-none text-sm text-gray-100 placeholder-gray-500"
+          />
+          <span className="text-xs text-gray-600">ESC to close</span>
+        </div>
+        <ul className="max-h-80 overflow-y-auto">
+          {filtered.length === 0 && (
+            <li className="px-4 py-6 text-center text-xs text-gray-600">No files match</li>
+          )}
+          {filtered.map((p, i) => (
+            <li key={p}>
+              <button
+                onClick={() => onSelect(p)}
+                className={`w-full text-left px-4 py-2 text-xs font-mono transition-colors ${
+                  i === cursor
+                    ? "bg-blue-600/30 text-blue-300"
+                    : "text-gray-300 hover:bg-gray-800"
+                }`}
+              >
+                {p}
+              </button>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </div>
+  );
+}
+
 export default function WorkspacePage() {
   const params = useParams();
   const router = useRouter();
@@ -221,6 +322,15 @@ export default function WorkspacePage() {
   const [isSavingFile, setIsSavingFile] = useState(false);
   const [fileSaveMsg, setFileSaveMsg] = useState<string | null>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
+
+  // Right panel tab: "files" | "git" | "search"
+  const [rightTab, setRightTab] = useState<"files" | "git" | "search">("files");
+
+  // Fuzzy file finder
+  const [isFileFinderOpen, setIsFileFinderOpen] = useState(false);
+
+  // Keyboard shortcuts overlay
+  const [isShortcutsOpen, setIsShortcutsOpen] = useState(false);
 
   const toggleChatPanel = () => {
     const panel = chatPanelRef.current;
@@ -286,12 +396,33 @@ export default function WorkspacePage() {
     }
   }, [selectedFile, fileContents, projectId]);
 
-  // Keyboard shortcut: Ctrl+S / Cmd+S to save
+  // Keyboard shortcuts: Ctrl+S save | Ctrl+P file finder | Ctrl+Shift+F search | ? help
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement)?.tagName?.toLowerCase();
+      const isEditing = tag === "input" || tag === "textarea" || (e.target as HTMLElement)?.isContentEditable;
+
       if ((e.ctrlKey || e.metaKey) && e.key === "s") {
         e.preventDefault();
         saveCurrentFile();
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key === "p") {
+        e.preventDefault();
+        setIsFileFinderOpen((prev) => !prev);
+      }
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === "f") {
+        e.preventDefault();
+        setRightTab("search");
+        // Ensure the right panel is expanded
+        const panel = repoPanelRef.current;
+        if (panel?.isCollapsed()) panel.expand();
+      }
+      if (e.key === "?" && !isEditing) {
+        setIsShortcutsOpen((prev) => !prev);
+      }
+      if (e.key === "Escape") {
+        setIsFileFinderOpen(false);
+        setIsShortcutsOpen(false);
       }
     };
     window.addEventListener("keydown", onKeyDown);
@@ -312,11 +443,19 @@ export default function WorkspacePage() {
       }
 
       const json = await res.json();
+      const sessionId: string = json.session_id;
+
+      // Persist session ids in sessionStorage so they survive hot-reloads
+      const storageKey = `terminal-sessions-${projectId}`;
+      try {
+        const existing: string[] = JSON.parse(sessionStorage.getItem(storageKey) || "[]");
+        sessionStorage.setItem(storageKey, JSON.stringify([...existing, sessionId]));
+      } catch { /* ignore storage errors */ }
 
       setTerminals((prev) => {
         const newTerminal: TerminalSession = {
           id: `t-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-          sessionId: json.session_id,
+          sessionId,
           label: `Terminal ${prev.length + 1}`,
         };
         setActiveTerminalId(newTerminal.id);
@@ -495,7 +634,25 @@ export default function WorkspacePage() {
     if (projectId) {
       fetchProject();
       fetchFileTree();
-      createTerminal();
+
+      // Restore persisted terminal sessions (feature: session persistence)
+      const storageKey = `terminal-sessions-${projectId}`;
+      let restored = false;
+      try {
+        const saved: string[] = JSON.parse(sessionStorage.getItem(storageKey) || "[]");
+        if (saved.length > 0) {
+          const restored_sessions: TerminalSession[] = saved.map((sid, i) => ({
+            id: `t-restored-${i}-${sid.slice(0, 6)}`,
+            sessionId: sid,
+            label: `Terminal ${i + 1}`,
+          }));
+          setTerminals(restored_sessions);
+          setActiveTerminalId(restored_sessions[restored_sessions.length - 1].id);
+          restored = true;
+        }
+      } catch { /* ignore */ }
+
+      if (!restored) createTerminal();
 
       // Poll git status every 8 s to keep file badge indicators fresh
       const gitPoll = setInterval(() => {
@@ -600,6 +757,13 @@ export default function WorkspacePage() {
               <PanelRight size={15} />
             </button>
           </div>
+          <button
+            onClick={() => setIsShortcutsOpen(true)}
+            title="Keyboard shortcuts (?)"
+            className="p-2 text-gray-500 hover:text-gray-900 dark:hover:text-white transition-colors text-base font-bold leading-none"
+          >
+            ?
+          </button>
           <Link
             href={`/projects/${projectId}/settings`}
             title="Settings"
@@ -885,7 +1049,7 @@ export default function WorkspacePage() {
 
             <PanelResizeHandle className="w-1 bg-gray-200 dark:bg-gray-800 hover:bg-blue-500 cursor-col-resize transition-colors" />
 
-            <Panel
+<Panel
               ref={repoPanelRef}
               defaultSize={20}
               minSize={15}
@@ -895,59 +1059,108 @@ export default function WorkspacePage() {
               onCollapse={() => setIsRepoCollapsed(true)}
               onExpand={() => setIsRepoCollapsed(false)}
             >
-              {/* Right Panel: File Explorer */}
+              {/* Right Panel: File Explorer + Git */}
               <aside className="h-full border-l border-gray-200 dark:border-gray-800 bg-white dark:bg-[#151515] flex flex-col">
-                <div className="h-12 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between px-4">
-                  <h2 className="text-sm font-semibold flex items-center gap-2">
-                    <Folder size={16} />
-                    Repository
-                  </h2>
+                {/* Tab bar */}
+                <div className="h-10 border-b border-gray-200 dark:border-gray-800 flex items-center shrink-0">
                   <button
-                    onClick={refreshFileTree}
-                    className="p-1 text-gray-400 hover:text-gray-200 rounded transition-colors"
-                    title="Refresh files"
+                    onClick={() => setRightTab("files")}
+                    className={`flex items-center gap-1.5 px-3 h-full text-xs border-r border-gray-700 transition-colors ${
+                      rightTab === "files"
+                        ? "text-white bg-[#1e1e1e]"
+                        : "text-gray-400 hover:text-gray-200 hover:bg-gray-800/30"
+                    }`}
                   >
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      width="13"
-                      height="13"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <path d="M21 2v6h-6" />
-                      <path d="M3 12a9 9 0 0 1 15-6.7L21 8" />
-                      <path d="M3 22v-6h6" />
-                      <path d="M21 12a9 9 0 0 1-15 6.7L3 16" />
-                    </svg>
+                    <Folder size={12} />
+                    Files
+                  </button>
+                  <button
+                    onClick={() => setRightTab("search")}
+                    title="Search across files (Ctrl+Shift+F)"
+                    className={`flex items-center gap-1.5 px-3 h-full text-xs border-r border-gray-700 transition-colors ${
+                      rightTab === "search"
+                        ? "text-white bg-[#1e1e1e]"
+                        : "text-gray-400 hover:text-gray-200 hover:bg-gray-800/30"
+                    }`}
+                  >
+                    <Search size={12} />
+                    Search
+                  </button>
+                  <button
+                    onClick={() => setRightTab("git")}
+                    className={`flex items-center gap-1.5 px-3 h-full text-xs transition-colors ${
+                      rightTab === "git"
+                        ? "text-white bg-[#1e1e1e]"
+                        : "text-gray-400 hover:text-gray-200 hover:bg-gray-800/30"
+                    }`}
+                  >
+                    <GitBranch size={12} />
+                    Git
                   </button>
                 </div>
-                <div className="flex-1 py-2 overflow-y-auto text-sm">
-                  {isLoadingFiles ? (
-                    <div className="flex items-center justify-center h-20">
-                      <Loader2 size={16} className="animate-spin text-gray-400" />
+
+                {rightTab === "files" ? (
+                  <>
+                    <div className="flex items-center justify-between px-3 py-1.5 border-b border-gray-800 shrink-0">
+                      <span className="text-xs text-gray-500">Explorer</span>
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => setIsFileFinderOpen(true)}
+                          className="p-1 text-gray-500 hover:text-gray-200 rounded transition-colors"
+                          title="Go to file (Ctrl+P)"
+                        >
+                          <Search size={12} />
+                        </button>
+                        <button
+                          onClick={refreshFileTree}
+                          className="p-1 text-gray-400 hover:text-gray-200 rounded transition-colors"
+                          title="Refresh files"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M21 2v6h-6" />
+                            <path d="M3 12a9 9 0 0 1 15-6.7L21 8" />
+                            <path d="M3 22v-6h6" />
+                            <path d="M21 12a9 9 0 0 1-15 6.7L3 16" />
+                          </svg>
+                        </button>
+                      </div>
                     </div>
-                  ) : fileTree.length === 0 ? (
-                    <div className="px-4 py-8 text-center">
-                      <FileCode size={32} className="text-gray-600 mx-auto mb-2" />
-                      <p className="text-xs text-gray-500">No files yet.</p>
-                      <p className="text-xs text-gray-600 mt-1">Ask the AI agent to create some!</p>
+                    <div className="flex-1 py-2 overflow-y-auto text-sm">
+                      {isLoadingFiles ? (
+                        <div className="flex items-center justify-center h-20">
+                          <Loader2 size={16} className="animate-spin text-gray-400" />
+                        </div>
+                      ) : fileTree.length === 0 ? (
+                        <div className="px-4 py-8 text-center">
+                          <FileCode size={32} className="text-gray-600 mx-auto mb-2" />
+                          <p className="text-xs text-gray-500">No files yet.</p>
+                          <p className="text-xs text-gray-600 mt-1">Ask the AI agent to create some!</p>
+                        </div>
+                      ) : (
+                        fileTree.map((node) => (
+                          <FileNodeItem
+                            key={node.path}
+                            node={node}
+                            depth={0}
+                            selectedPath={selectedFile}
+                            onFileClick={handleFileClick}
+                          />
+                        ))
+                      )}
                     </div>
-                  ) : (
-                    fileTree.map((node) => (
-                      <FileNodeItem
-                        key={node.path}
-                        node={node}
-                        depth={0}
-                        selectedPath={selectedFile}
-                        onFileClick={handleFileClick}
-                      />
-                    ))
-                  )}
-                </div>
+                  </>
+                ) : rightTab === "search" ? (
+                  <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
+                    <SearchPanel
+                      projectId={projectId}
+                      onFileOpen={handleFileClick}
+                    />
+                  </div>
+                ) : (
+                  <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
+                    <GitPanel projectId={projectId} />
+                  </div>
+                )}
               </aside>
             </Panel>
           </PanelGroup>
@@ -1031,6 +1244,24 @@ export default function WorkspacePage() {
           </footer>
         </Panel>
       </PanelGroup>
+
+      {/* Fuzzy File Finder overlay (Ctrl+P) */}
+      {isFileFinderOpen && (
+        <FileFinder
+          paths={flattenPaths(fileTree)}
+          onSelect={(path) => {
+            setIsFileFinderOpen(false);
+            handleFileClick(path);
+          }}
+          onClose={() => setIsFileFinderOpen(false)}
+        />
+      )}
+
+      {/* Keyboard Shortcuts overlay (press ?) */}
+      <KeyboardShortcutsModal
+        isOpen={isShortcutsOpen}
+        onClose={() => setIsShortcutsOpen(false)}
+      />
     </div>
   );
 }

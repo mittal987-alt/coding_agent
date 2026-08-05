@@ -7,8 +7,8 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from app.main import app
-from app.database.base import Base
+from main import app
+from app.models.base import Base
 from app.database.session import get_db
 TEST_DATABASE_URL = os.getenv(
     "TEST_DATABASE_URL",

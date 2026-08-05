@@ -47,11 +47,17 @@ class TerminalSession:
     def write(self, data: str):
         self.pty.write(data)
 
-    def read(self):
+    def resize(self, cols: int, rows: int) -> None:
+        try:
+            self.pty.set_size(cols, rows)
+        except Exception:
+            pass
+
+    def read(self) -> str | None:
         try:
             return self.pty.read()
         except Exception:
-            return ""
+            return None
 
     def close(self):
         try:

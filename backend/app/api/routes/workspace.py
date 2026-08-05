@@ -62,12 +62,9 @@ async def clone_repository(
     workspace: WorkspaceDep,
 ):
 
-    repo = await workspace.clone_repository(
-
-        workspace_id,
-
-        request.repository,
-
+    repo = await workspace.clone(
+        workspace_id=workspace_id,
+        repository=request.repository,
         branch=request.branch,
     )
 
@@ -131,7 +128,7 @@ async def files(
     workspace: WorkspaceDep,
 ):
 
-    return await workspace.list_files(
+    return await workspace.list_directory(
         workspace_id,
     )
 @router.post("/{workspace_id}/terminal")
@@ -141,11 +138,9 @@ async def terminal(
     workspace: WorkspaceDep,
 ):
 
-    result = await workspace.execute(
-
-        workspace_id,
-
-        command,
+    result = await workspace.terminal(
+        workspace_id=workspace_id,
+        command=command,
     )
 
     return result

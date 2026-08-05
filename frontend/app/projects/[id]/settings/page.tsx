@@ -189,6 +189,7 @@ export default function SettingsPage() {
 
   // ── Project settings ─────────────────────────────────────────────────────
   const [projectName, setProjectName] = useState("");
+  const [projectDescription, setProjectDescription] = useState("");
   const [repoUrl, setRepoUrl] = useState("");
   const [llmModel, setLlmModel] = useState("mistral-large");
   const [projectSaving, setProjectSaving] = useState(false);
@@ -220,6 +221,7 @@ export default function SettingsPage() {
         const data = await ProjectService.getProject(projectId);
         setProject(data);
         setProjectName(data.name || "");
+        setProjectDescription((data as any).description || "");
         setRepoUrl(data.repository_url || "");
         setLlmModel(data.llm_model || "mistral-large");
       } catch {
@@ -289,6 +291,7 @@ export default function SettingsPage() {
     try {
       const updated = await ProjectService.updateProject(projectId, {
         name: projectName || undefined,
+        description: projectDescription || undefined,
         repository_url: repoUrl || undefined,
         llm_model: llmModel || undefined,
       });
@@ -656,6 +659,18 @@ export default function SettingsPage() {
                     value={projectName}
                     onChange={(e) => setProjectName(e.target.value)}
                     placeholder="My project"
+                  />
+                </div>
+                <div>
+                  <FieldLabel hint="A short summary of what this project does.">
+                    Description
+                  </FieldLabel>
+                  <textarea
+                    value={projectDescription}
+                    onChange={(e) => setProjectDescription(e.target.value)}
+                    placeholder="e.g. A full-stack task manager built with FastAPI and Next.js"
+                    rows={3}
+                    className="w-full bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-900 dark:text-gray-200 focus:outline-none focus:ring-1 focus:ring-blue-500 resize-none"
                   />
                 </div>
                 <div>

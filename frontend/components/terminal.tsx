@@ -8,8 +8,10 @@ import "xterm/css/xterm.css";
 
 export default function IDETerminal({
   sessionId,
+  onResize,
 }: {
   sessionId: string;
+  onResize?: (cols: number, rows: number) => void;
 }) {
   const divRef = useRef<HTMLDivElement>(null);
 
@@ -31,35 +33,29 @@ export default function IDETerminal({
 
     terminal.open(divRef.current);
 
-    // xterm can't compute cell/font dimensions on a zero-size container
-    // (e.g. one hidden via display:none, or not yet laid out). Guard every
-    // fit() call so a stray resize/observer tick never crashes on an
-    // undefined `dimensions` read inside xterm's renderer.
-    const safeFit = () => {
+    // xterm can't compute cell/font dimensions on a zero-size container.
+    const safeFit = (socket?: WebSocket) => {
       const el = divRef.current;
       if (!el || el.offsetWidth === 0 || el.offsetHeight === 0) return;
       if (!terminal.element) return;
       try {
         fitAddon.fit();
+        const { cols, rows } = terminal;
+        onResize?.(cols, rows);
+        // Tell backend PTY about new dimensions
+        if (socket && socket.readyState === WebSocket.OPEN) {
+          socket.send(JSON.stringify({ type: "resize", cols, rows }));
+        }
       } catch (err) {
-        // Swallow fit races (e.g. mid-dispose) instead of crashing the tree.
         console.warn("Terminal fit skipped:", err);
       }
     };
-
-    requestAnimationFrame(() => {
-      safeFit();
-      terminal.focus();
-    });
-
-    const focusHandler = () => terminal.focus();
-    divRef.current.addEventListener("click", focusHandler);
 
     const socket = new WebSocket(`ws://localhost:8000/ws/${sessionId}`);
 
     socket.onopen = () => {
       setTimeout(() => {
-        safeFit();
+        safeFit(socket);
         terminal.focus();
       }, 100);
     };
@@ -82,21 +78,26 @@ export default function IDETerminal({
       }
     });
 
-    const resize = () => {
-      safeFit();
-    };
+    requestAnimationFrame(() => {
+      safeFit(socket);
+      terminal.focus();
+    });
 
-    window.addEventListener("resize", resize);
+    const focusHandler = () => terminal.focus();
+    divRef.current.addEventListener("click", focusHandler);
+
+    const resizeHandler = () => safeFit(socket);
+    window.addEventListener("resize", resizeHandler);
 
     const observer = new ResizeObserver(() => {
-      safeFit();
+      safeFit(socket);
     });
 
     observer.observe(divRef.current);
 
     return () => {
       observer.disconnect();
-      window.removeEventListener("resize", resize);
+      window.removeEventListener("resize", resizeHandler);
       divRef.current?.removeEventListener("click", focusHandler);
 
       if (

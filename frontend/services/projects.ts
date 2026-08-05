@@ -26,6 +26,7 @@ export interface ProjectCreate {
 
 export interface ProjectUpdate {
   name?: string;
+  description?: string;
   repository_url?: string;
   llm_model?: string;
   language?: string;

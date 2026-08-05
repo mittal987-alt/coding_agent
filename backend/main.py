@@ -1,12 +1,12 @@
+import app.models  # Register all SQLAlchemy models first
+
 from app.bootstrap.startup import lifespan
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.bootstrap.container import container
 from app.api.v1.router import api_router
 from app.core.constant import API_PREFIX
-from app.api.v1.router import api_router
 from app.terminal.websocket import router as terminal_ws_router
-import app.models  # Register all SQLAlchemy models
 
 app = FastAPI(
     title=container.settings.APP_NAME,
