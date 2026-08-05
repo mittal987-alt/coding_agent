@@ -71,12 +71,17 @@ class ProjectService:
 
             if project.repository_url:
                 Repo.clone_from(project.repository_url, str(repo_path))
+            else:
+                repo_path.mkdir(parents=True, exist_ok=True)
+                if not (repo_path / ".git").exists():
+                    _run_git(["init"], cwd=repo_path)
+                    _run_git(["checkout", "-b", project.default_branch or "main"], cwd=repo_path)
 
-                # Create the remaining folders after clone
-                storage.upload_path(str(project.id)).mkdir(parents=True, exist_ok=True)
-                storage.vectorstore_path(str(project.id)).mkdir(parents=True, exist_ok=True)
-                storage.logs_path(str(project.id)).mkdir(parents=True, exist_ok=True)
-                storage.temp_path(str(project.id)).mkdir(parents=True, exist_ok=True)
+            # Create the remaining folders
+            storage.upload_path(str(project.id)).mkdir(parents=True, exist_ok=True)
+            storage.vectorstore_path(str(project.id)).mkdir(parents=True, exist_ok=True)
+            storage.logs_path(str(project.id)).mkdir(parents=True, exist_ok=True)
+            storage.temp_path(str(project.id)).mkdir(parents=True, exist_ok=True)
 
             workspace = Workspace(
                 project_id=project.id,
@@ -178,13 +183,6 @@ class ProjectService:
         self.repository.commit()
         self.repository.refresh(project)
         return project
-
-def update_project(self, project, updates: "ProjectUpdate"):
-    data = updates.model_dump(exclude_unset=True)
-    for field, value in data.items():
-        setattr(project, field, value)
-    self.repository.commit()
-    return project
 
     def delete_project(self, project):
         try:

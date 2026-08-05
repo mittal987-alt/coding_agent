@@ -2,7 +2,7 @@
 
 import React, { useEffect, useRef, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, Loader2, MessageSquare, Terminal, FileCode, Play, Folder, Settings, Send, PanelLeft, PanelRight, PanelBottom, Save, GitBranch, Search } from "lucide-react";
+import { ArrowLeft, Loader2, MessageSquare, Terminal, FileCode, Play, Folder, Settings, Send, PanelLeft, PanelRight, PanelBottom, Save, GitBranch, Search, FilePlus, FolderPlus, Trash2, Edit3 } from "lucide-react";
 import { ProjectService, Project } from "@/services/projects";
 import Link from "next/link";
 import ReactMarkdown from "react-markdown";
@@ -17,8 +17,8 @@ import {
   PanelResizeHandle,
   ImperativePanelHandle,
 } from "react-resizable-panels";
-import { ProjectSettingsModal } from "@/components/ProjectSettingsModal";
-import { SearchModal } from "@/components/SearchModal";
+import { ProjectSettingsModal } from "@/components/projectSettingModel";
+import { SearchModal } from "@/components/searchModel";
 import { KeyboardShortcutsModal } from "@/components/KeyboardShortcutsModal";
 import GitPanel from "@/components/GitPanel";
 import SearchPanel from "@/components/SearchPanel";
@@ -139,30 +139,80 @@ function FileNodeItem({
   depth = 0,
   selectedPath,
   onFileClick,
+  onCreateFile,
+  onCreateFolder,
+  onRename,
+  onDelete,
 }: {
   node: FileNode;
   depth?: number;
   selectedPath: string | null;
   onFileClick: (path: string) => void;
+  onCreateFile: (parentPath?: string) => void;
+  onCreateFolder: (parentPath?: string) => void;
+  onRename: (path: string, currentName: string) => void;
+  onDelete: (path: string) => void;
 }) {
   const [isOpen, setIsOpen] = useState(node.type === "directory" && depth === 0);
 
   if (node.type === "directory") {
     return (
-      <div>
-        <button
-          onClick={() => setIsOpen(!isOpen)}
-          className="flex items-center gap-1.5 w-full text-left py-0.5 px-2 rounded hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300 text-xs transition-colors"
-          style={{ paddingLeft: `${8 + depth * 12}px` }}
-        >
-          <span className={`transition-transform text-gray-400 text-[10px] ${isOpen ? "rotate-90" : ""}`}>▶</span>
-          <Folder size={13} className="text-yellow-400 shrink-0" />
-          <span className="truncate">{node.name}</span>
-        </button>
+      <div className="group">
+        <div className="flex items-center justify-between w-full hover:bg-gray-800/50 rounded-sm pr-1 transition-colors group/row">
+          <button
+            onClick={() => setIsOpen(!isOpen)}
+            className="flex items-center gap-1.5 flex-1 min-w-0 text-left py-1 px-1.5 text-gray-300 text-xs truncate"
+            style={{ paddingLeft: `${8 + depth * 12}px` }}
+          >
+            <span className={`transition-transform text-gray-500 text-[9px] shrink-0 ${isOpen ? "rotate-90" : ""}`}>▶</span>
+            <Folder size={13} className="text-yellow-400 shrink-0" />
+            <span className="truncate text-gray-200 font-normal">{node.name}</span>
+          </button>
+          <div className="opacity-0 group-hover/row:opacity-100 flex items-center gap-0.5 shrink-0 transition-opacity">
+            <button
+              onClick={(e) => { e.stopPropagation(); onCreateFile(node.path); }}
+              title="New File"
+              className="p-1 text-gray-400 hover:text-white hover:bg-gray-700/60 rounded transition-colors"
+            >
+              <FilePlus size={12} />
+            </button>
+            <button
+              onClick={(e) => { e.stopPropagation(); onCreateFolder(node.path); }}
+              title="New Folder"
+              className="p-1 text-gray-400 hover:text-white hover:bg-gray-700/60 rounded transition-colors"
+            >
+              <FolderPlus size={12} />
+            </button>
+            <button
+              onClick={(e) => { e.stopPropagation(); onRename(node.path, node.name); }}
+              title="Rename"
+              className="p-1 text-gray-400 hover:text-white hover:bg-gray-700/60 rounded transition-colors"
+            >
+              <Edit3 size={12} />
+            </button>
+            <button
+              onClick={(e) => { e.stopPropagation(); onDelete(node.path); }}
+              title="Delete"
+              className="p-1 text-gray-400 hover:text-red-400 hover:bg-gray-700/60 rounded transition-colors"
+            >
+              <Trash2 size={12} />
+            </button>
+          </div>
+        </div>
         {isOpen && node.children && (
           <div>
             {node.children.map((child) => (
-              <FileNodeItem key={child.path} node={child} depth={depth + 1} selectedPath={selectedPath} onFileClick={onFileClick} />
+              <FileNodeItem
+                key={child.path}
+                node={child}
+                depth={depth + 1}
+                selectedPath={selectedPath}
+                onFileClick={onFileClick}
+                onCreateFile={onCreateFile}
+                onCreateFolder={onCreateFolder}
+                onRename={onRename}
+                onDelete={onDelete}
+              />
             ))}
           </div>
         )}
@@ -172,22 +222,41 @@ function FileNodeItem({
 
   const isSelected = selectedPath === node.path;
   return (
-    <button
-      onClick={() => onFileClick(node.path)}
-      className={`flex items-center gap-1.5 w-full text-left py-0.5 px-2 rounded text-xs transition-colors ${isSelected
-          ? "bg-blue-600/20 text-blue-400"
-          : "hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-600 dark:text-gray-400"
-        }`}
+    <div
+      className={`flex items-center justify-between w-full py-1 px-1.5 rounded-sm text-xs group/row transition-colors ${
+        isSelected ? "bg-blue-600/25 text-blue-300 font-medium" : "hover:bg-gray-800/50 text-gray-400"
+      }`}
       style={{ paddingLeft: `${8 + depth * 12}px` }}
     >
-      <FileCode size={13} className={isSelected ? "text-blue-400" : "text-gray-400"} />
-      <span className="truncate">{node.name}</span>
-      {node.status && (
-        <span className={`ml-auto text-[10px] font-bold shrink-0 ${statusColor(node.status)}`}>
-          {statusLetter(node.status)}
-        </span>
-      )}
-    </button>
+      <button
+        onClick={() => onFileClick(node.path)}
+        className="flex items-center gap-1.5 flex-1 min-w-0 text-left truncate pr-1"
+      >
+        <FileCode size={13} className={isSelected ? "text-blue-400 shrink-0" : "text-gray-500 shrink-0"} />
+        <span className="truncate">{node.name}</span>
+        {node.status && (
+          <span className={`ml-1 text-[10px] font-bold shrink-0 ${statusColor(node.status)}`}>
+            {statusLetter(node.status)}
+          </span>
+        )}
+      </button>
+      <div className="opacity-0 group-hover/row:opacity-100 flex items-center gap-0.5 shrink-0 transition-opacity">
+        <button
+          onClick={(e) => { e.stopPropagation(); onRename(node.path, node.name); }}
+          title="Rename"
+          className="p-1 text-gray-400 hover:text-white hover:bg-gray-700/60 rounded transition-colors"
+        >
+          <Edit3 size={12} />
+        </button>
+        <button
+          onClick={(e) => { e.stopPropagation(); onDelete(node.path); }}
+          title="Delete"
+          className="p-1 text-gray-400 hover:text-red-400 hover:bg-gray-700/60 rounded transition-colors"
+        >
+          <Trash2 size={12} />
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -329,29 +398,104 @@ export default function WorkspacePage() {
   // Fuzzy file finder
   const [isFileFinderOpen, setIsFileFinderOpen] = useState(false);
 
+  // File action modal state (New File / New Folder / Rename / Delete)
+  const [fileActionModal, setFileActionModal] = useState<{
+    type: "create_file" | "create_folder" | "rename" | "delete" | null;
+    path: string;
+    name?: string;
+  }>({ type: null, path: "" });
+  const [fileInputName, setFileInputName] = useState("");
+
+  const handleFileActionSubmit = async () => {
+    if (!fileActionModal.type) return;
+
+    if (fileActionModal.type === "delete") {
+      try {
+        await fetch(
+          `http://localhost:8000/api/v1/projects/${projectId}/files/delete?path=${encodeURIComponent(fileActionModal.path)}`,
+          { method: "DELETE" }
+        );
+        setOpenTabs((prev) => prev.filter((p) => p !== fileActionModal.path));
+        if (selectedFile === fileActionModal.path) setSelectedFile(null);
+        refreshFileTree();
+      } catch (err) {
+        console.error("Delete failed", err);
+      } finally {
+        setFileActionModal({ type: null, path: "" });
+      }
+      return;
+    }
+
+    if (!fileInputName.trim()) return;
+
+    if (fileActionModal.type === "rename") {
+      const parts = fileActionModal.path.split("/");
+      parts.pop();
+      const parentDir = parts.join("/");
+      const newPath = parentDir ? `${parentDir}/${fileInputName.trim()}` : fileInputName.trim();
+      try {
+        await fetch(`http://localhost:8000/api/v1/projects/${projectId}/files/rename`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ old_path: fileActionModal.path, new_path: newPath }),
+        });
+        if (selectedFile === fileActionModal.path) setSelectedFile(newPath);
+        setOpenTabs((prev) => prev.map((t) => (t === fileActionModal.path ? newPath : t)));
+        refreshFileTree();
+      } catch (err) {
+        console.error("Rename failed", err);
+      } finally {
+        setFileActionModal({ type: null, path: "" });
+      }
+      return;
+    }
+
+    // create_file or create_folder
+    const isDir = fileActionModal.type === "create_folder";
+    const targetRel = fileActionModal.path
+      ? `${fileActionModal.path}/${fileInputName.trim()}`
+      : fileInputName.trim();
+
+    try {
+      await fetch(`http://localhost:8000/api/v1/projects/${projectId}/files/create`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path: targetRel, is_directory: isDir }),
+      });
+      refreshFileTree();
+      if (!isDir) handleFileClick(targetRel);
+    } catch (err) {
+      console.error("Create failed", err);
+    } finally {
+      setFileActionModal({ type: null, path: "" });
+    }
+  };
+
   // Keyboard shortcuts overlay
   const [isShortcutsOpen, setIsShortcutsOpen] = useState(false);
+  // Project settings modal overlay
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
-  const toggleChatPanel = () => {
+  const toggleChatPanel = useCallback(() => {
     const panel = chatPanelRef.current;
     if (!panel) return;
     if (panel.isCollapsed()) panel.expand();
     else panel.collapse();
-  };
+  }, []);
 
-  const toggleRepoPanel = () => {
+  const toggleRepoPanel = useCallback(() => {
     const panel = repoPanelRef.current;
     if (!panel) return;
     if (panel.isCollapsed()) panel.expand();
     else panel.collapse();
-  };
+  }, []);
 
-  const toggleTerminalPanel = () => {
+  const toggleTerminalPanel = useCallback(() => {
     const panel = terminalPanelRef.current;
     if (!panel) return;
     if (panel.isCollapsed()) panel.expand();
     else panel.collapse();
-  };
+  }, []);
 
   const [messages, setMessages] = useState<Message[]>([
     {
@@ -387,6 +531,7 @@ export default function WorkspacePage() {
         }
       );
       setFileSaveMsg("Saved");
+      window.dispatchEvent(new Event("git-refresh"));
       setTimeout(() => setFileSaveMsg(null), 2000);
     } catch {
       setFileSaveMsg("Save failed");
@@ -402,11 +547,11 @@ export default function WorkspacePage() {
       const tag = (e.target as HTMLElement)?.tagName?.toLowerCase();
       const isEditing = tag === "input" || tag === "textarea" || (e.target as HTMLElement)?.isContentEditable;
 
-      if ((e.ctrlKey || e.metaKey) && e.key === "s") {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
         e.preventDefault();
         saveCurrentFile();
       }
-      if ((e.ctrlKey || e.metaKey) && e.key === "p") {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "p") {
         e.preventDefault();
         setIsFileFinderOpen((prev) => !prev);
       }
@@ -416,6 +561,18 @@ export default function WorkspacePage() {
         // Ensure the right panel is expanded
         const panel = repoPanelRef.current;
         if (panel?.isCollapsed()) panel.expand();
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "b") {
+        e.preventDefault();
+        toggleChatPanel();
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "e") {
+        e.preventDefault();
+        toggleRepoPanel();
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key === "`") {
+        e.preventDefault();
+        toggleTerminalPanel();
       }
       if (e.key === "?" && !isEditing) {
         setIsShortcutsOpen((prev) => !prev);
@@ -427,7 +584,7 @@ export default function WorkspacePage() {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [saveCurrentFile]);
+  }, [saveCurrentFile, toggleChatPanel, toggleRepoPanel, toggleTerminalPanel]);
 
   const createTerminal = async () => {
     try {
@@ -764,13 +921,13 @@ export default function WorkspacePage() {
           >
             ?
           </button>
-          <Link
-            href={`/projects/${projectId}/settings`}
+          <button
+            onClick={() => setIsSettingsOpen(true)}
             title="Settings"
             className="p-2 text-gray-500 hover:text-gray-900 dark:hover:text-white transition-colors"
           >
             <Settings size={18} />
-          </Link>
+          </button>
         </div>
       </header>
 
@@ -1102,21 +1259,35 @@ export default function WorkspacePage() {
                 {rightTab === "files" ? (
                   <>
                     <div className="flex items-center justify-between px-3 py-1.5 border-b border-gray-800 shrink-0">
-                      <span className="text-xs text-gray-500">Explorer</span>
+                      <span className="text-xs text-gray-500 font-semibold uppercase tracking-wider">Explorer</span>
                       <div className="flex items-center gap-1">
                         <button
+                          onClick={() => { setFileInputName(""); setFileActionModal({ type: "create_file", path: "" }); }}
+                          className="p-1 text-gray-400 hover:text-white rounded transition-colors"
+                          title="New File"
+                        >
+                          <FilePlus size={13} />
+                        </button>
+                        <button
+                          onClick={() => { setFileInputName(""); setFileActionModal({ type: "create_folder", path: "" }); }}
+                          className="p-1 text-gray-400 hover:text-white rounded transition-colors"
+                          title="New Folder"
+                        >
+                          <FolderPlus size={13} />
+                        </button>
+                        <button
                           onClick={() => setIsFileFinderOpen(true)}
-                          className="p-1 text-gray-500 hover:text-gray-200 rounded transition-colors"
+                          className="p-1 text-gray-400 hover:text-white rounded transition-colors"
                           title="Go to file (Ctrl+P)"
                         >
-                          <Search size={12} />
+                          <Search size={13} />
                         </button>
                         <button
                           onClick={refreshFileTree}
-                          className="p-1 text-gray-400 hover:text-gray-200 rounded transition-colors"
+                          className="p-1 text-gray-400 hover:text-white rounded transition-colors"
                           title="Refresh files"
                         >
-                          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                             <path d="M21 2v6h-6" />
                             <path d="M3 12a9 9 0 0 1 15-6.7L21 8" />
                             <path d="M3 22v-6h6" />
@@ -1134,7 +1305,12 @@ export default function WorkspacePage() {
                         <div className="px-4 py-8 text-center">
                           <FileCode size={32} className="text-gray-600 mx-auto mb-2" />
                           <p className="text-xs text-gray-500">No files yet.</p>
-                          <p className="text-xs text-gray-600 mt-1">Ask the AI agent to create some!</p>
+                          <button
+                            onClick={() => { setFileInputName(""); setFileActionModal({ type: "create_file", path: "" }); }}
+                            className="text-xs text-blue-400 hover:underline mt-2"
+                          >
+                            Create first file
+                          </button>
                         </div>
                       ) : (
                         fileTree.map((node) => (
@@ -1144,6 +1320,10 @@ export default function WorkspacePage() {
                             depth={0}
                             selectedPath={selectedFile}
                             onFileClick={handleFileClick}
+                            onCreateFile={(parentPath) => { setFileInputName(""); setFileActionModal({ type: "create_file", path: parentPath || "" }); }}
+                            onCreateFolder={(parentPath) => { setFileInputName(""); setFileActionModal({ type: "create_folder", path: parentPath || "" }); }}
+                            onRename={(path, name) => { setFileInputName(name); setFileActionModal({ type: "rename", path, name }); }}
+                            onDelete={(path) => setFileActionModal({ type: "delete", path })}
                           />
                         ))
                       )}
@@ -1257,10 +1437,74 @@ export default function WorkspacePage() {
         />
       )}
 
-      {/* Keyboard Shortcuts overlay (press ?) */}
+      {/* File Action Modal (New File / New Folder / Rename / Delete) */}
+      {fileActionModal.type && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm"
+          onClick={() => setFileActionModal({ type: null, path: "" })}
+        >
+          <div
+            className="bg-[#1e1e1e] border border-gray-700/80 rounded-xl p-5 w-96 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-sm font-semibold text-white mb-3 flex items-center gap-2">
+              {fileActionModal.type === "create_file" && <><FilePlus size={15} className="text-blue-400" /> {fileActionModal.path ? `New File in ${fileActionModal.path}` : "New File"}</>}
+              {fileActionModal.type === "create_folder" && <><FolderPlus size={15} className="text-yellow-400" /> {fileActionModal.path ? `New Folder in ${fileActionModal.path}` : "New Folder"}</>}
+              {fileActionModal.type === "rename" && <><Edit3 size={15} className="text-green-400" /> Rename '{fileActionModal.name || fileActionModal.path}'</>}
+              {fileActionModal.type === "delete" && <><Trash2 size={15} className="text-red-400" /> Delete '{fileActionModal.path}'?</>}
+            </h3>
+
+            {fileActionModal.type !== "delete" ? (
+              <input
+                autoFocus
+                type="text"
+                value={fileInputName}
+                onChange={(e) => setFileInputName(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") handleFileActionSubmit(); }}
+                placeholder={
+                  fileActionModal.type === "create_file" ? "e.g. index.ts or src/utils.js" :
+                  fileActionModal.type === "create_folder" ? "e.g. components or lib" : "New name"
+                }
+                className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-blue-500 mb-4"
+              />
+            ) : (
+              <p className="text-xs text-gray-400 mb-4">
+                Are you sure you want to delete this file/folder? This action cannot be undone.
+              </p>
+            )}
+
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setFileActionModal({ type: null, path: "" })}
+                className="px-3 py-1.5 text-xs text-gray-400 hover:text-white rounded-lg transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleFileActionSubmit}
+                className={`px-3.5 py-1.5 text-xs font-medium rounded-lg text-white transition-colors ${
+                  fileActionModal.type === "delete"
+                    ? "bg-red-600 hover:bg-red-700"
+                    : "bg-blue-600 hover:bg-blue-700"
+                }`}
+              >
+                {fileActionModal.type === "delete" ? "Delete" : "Confirm"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Keyboard Shortcuts overlay (?) */}
       <KeyboardShortcutsModal
         isOpen={isShortcutsOpen}
         onClose={() => setIsShortcutsOpen(false)}
+      />
+      <ProjectSettingsModal
+        isOpen={isSettingsOpen}
+        onClose={() => setIsSettingsOpen(false)}
+        project={project}
+        onProjectUpdated={(updated) => setProject(updated)}
       />
     </div>
   );

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { Loader2, GitBranch, GitCommit, Check, ChevronDown, ChevronRight, RefreshCw } from "lucide-react";
+import { Loader2, GitBranch, GitCommit, Check, ChevronDown, ChevronRight, RefreshCw, Upload } from "lucide-react";
 
 type FileStatus = "modified" | "untracked" | "staged" | "deleted";
 
@@ -78,6 +78,13 @@ export default function GitPanel({ projectId }: { projectId: string }) {
 
   useEffect(() => {
     refreshStatus();
+    const interval = setInterval(refreshStatus, 3000);
+    const handleRefreshEvent = () => refreshStatus();
+    window.addEventListener("git-refresh", handleRefreshEvent);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener("git-refresh", handleRefreshEvent);
+    };
   }, [refreshStatus]);
 
   useEffect(() => {
@@ -109,6 +116,32 @@ export default function GitPanel({ projectId }: { projectId: string }) {
       setCommitError(e.message || "Commit failed.");
     } finally {
       setIsCommitting(false);
+    }
+  };
+
+  const [isPushing, setIsPushing] = useState(false);
+
+  const handlePush = async () => {
+    setIsPushing(true);
+    setCommitError(null);
+    setCommitSuccess(null);
+    try {
+      const res = await fetch(`http://localhost:8000/api/v1/projects/${projectId}/git/push`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+      const json = await res.json();
+      if (json.success) {
+        setCommitSuccess("Pushed to GitHub successfully!");
+        if (showLog) await loadLog();
+        setTimeout(() => setCommitSuccess(null), 4000);
+      } else {
+        setCommitError(json.message || "Push failed.");
+      }
+    } catch (e: any) {
+      setCommitError(e.message || "Push failed.");
+    } finally {
+      setIsPushing(false);
     }
   };
 
@@ -154,7 +187,7 @@ export default function GitPanel({ projectId }: { projectId: string }) {
         )}
       </div>
 
-      {/* Commit box */}
+      {/* Commit & Push box */}
       <div className="border-t border-gray-800 p-3 flex flex-col gap-2">
         <textarea
           value={commitMsg}
@@ -169,24 +202,39 @@ export default function GitPanel({ projectId }: { projectId: string }) {
             }
           }}
         />
-        {commitError && <p className="text-xs text-red-400">{commitError}</p>}
+        {commitError && <p className="text-xs text-red-400 leading-snug">{commitError}</p>}
         {commitSuccess && (
           <p className="text-xs text-green-400 flex items-center gap-1">
             <Check size={11} /> {commitSuccess}
           </p>
         )}
-        <button
-          onClick={handleCommit}
-          disabled={!commitMsg.trim() || isCommitting}
-          className="flex items-center justify-center gap-2 w-full py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-medium transition-colors"
-        >
-          {isCommitting ? (
-            <Loader2 size={12} className="animate-spin" />
-          ) : (
-            <GitCommit size={12} />
-          )}
-          Commit All
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={handleCommit}
+            disabled={!commitMsg.trim() || isCommitting}
+            className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-medium transition-colors"
+          >
+            {isCommitting ? (
+              <Loader2 size={12} className="animate-spin" />
+            ) : (
+              <GitCommit size={12} />
+            )}
+            Commit All
+          </button>
+          <button
+            onClick={handlePush}
+            disabled={isPushing}
+            title="Push local commits to remote GitHub repository"
+            className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-gray-800 hover:bg-gray-700 disabled:opacity-40 text-gray-200 hover:text-white text-xs font-medium transition-colors border border-gray-700"
+          >
+            {isPushing ? (
+              <Loader2 size={12} className="animate-spin" />
+            ) : (
+              <Upload size={12} />
+            )}
+            Push
+          </button>
+        </div>
       </div>
 
       {/* Commit log toggle */}
