@@ -499,6 +499,72 @@ def search_files(
 
 
 # ---------------------------------------------------------------------------
+# Search & Replace across files  (Ctrl+H)
+# ---------------------------------------------------------------------------
+
+class _ReplaceBody(_PydanticBase):
+    search: str
+    replace: str
+    case_sensitive: bool = False
+
+
+@router.post("/{project_id}/files/replace", response_model=ApiResponse)
+def replace_in_files(
+    project_id: str,
+    body: _ReplaceBody,
+    service: ProjectService = Depends(get_project_service),
+):
+    """Replace all occurrences of a search term across all text files."""
+    import re as _re
+
+    project = service.get_project(project_id)
+    if project is None:
+        raise HTTPException(status_code=404, detail="Project not found.")
+
+    if not body.search:
+        return ApiResponse(success=False, message="Search term is required.")
+
+    repo_path = storage.repository_path(project.id)
+    if not repo_path.exists():
+        return ApiResponse(success=True, message="No repository", data={"replaced": 0, "files": []})
+
+    modified_files: list[dict] = []
+    total_replaced = 0
+    flags = 0 if body.case_sensitive else _re.IGNORECASE
+    pattern = _re.compile(_re.escape(body.search), flags)
+
+    for file_path in repo_path.rglob("*"):
+        if file_path.is_dir():
+            continue
+        if any(part in _SKIP_DIRS for part in file_path.parts):
+            continue
+        if file_path.suffix.lower() in _BINARY_EXTS:
+            continue
+        try:
+            if file_path.stat().st_size > 500_000:
+                continue
+        except OSError:
+            continue
+        try:
+            content = file_path.read_text(encoding="utf-8", errors="ignore")
+            count = len(pattern.findall(content))
+            if count > 0:
+                new_content = pattern.sub(body.replace, content)
+                file_path.write_text(new_content, encoding="utf-8")
+                relative = str(file_path.relative_to(repo_path)).replace("\\", "/")
+                modified_files.append({"path": relative, "count": count})
+                total_replaced += count
+        except Exception:
+            pass
+
+    return ApiResponse(
+        success=True,
+        message=f"Replaced {total_replaced} occurrence(s) in {len(modified_files)} file(s).",
+        data={"replaced": total_replaced, "files": modified_files},
+    )
+
+
+# ---------------------------------------------------------------------------
 # Git status  (file tree badges)
 
 # ---------------------------------------------------------------------------
@@ -684,6 +750,127 @@ def git_diff(
     except Exception as e:
         return ApiResponse(success=True, message=f"git diff failed: {e}", data="")
 
+
+# ---------------------------------------------------------------------------
+# Git branch management
+# ---------------------------------------------------------------------------
+
+class _BranchCreateBody(_PydanticBase):
+    name: str
+
+
+class _CheckoutBranchBody(_PydanticBase):
+    branch: str
+
+
+@router.get("/{project_id}/git/branches", response_model=ApiResponse)
+def get_git_branches(
+    project_id: str,
+    service: ProjectService = Depends(get_project_service),
+):
+    """Return all local branches and the currently checked-out branch."""
+    import subprocess
+    project = service.get_project(project_id)
+    if project is None:
+        raise HTTPException(status_code=404, detail="Project not found.")
+
+    repo_path = storage.repository_path(project.id)
+    if not repo_path.exists() or not (repo_path / ".git").exists():
+        return ApiResponse(success=True, message="No git repo", data={"current": "main", "branches": ["main"]})
+
+    try:
+        current_result = subprocess.run(
+            ["git", "branch", "--show-current"],
+            cwd=str(repo_path), capture_output=True, text=True, timeout=10,
+        )
+        current = current_result.stdout.strip() or "HEAD"
+        branches_result = subprocess.run(
+            ["git", "branch"],
+            cwd=str(repo_path), capture_output=True, text=True, timeout=10,
+        )
+        branches = [
+            line.strip().lstrip("* ").strip()
+            for line in branches_result.stdout.splitlines()
+            if line.strip()
+        ]
+        return ApiResponse(success=True, message="Success", data={"current": current, "branches": branches})
+    except Exception as e:
+        return ApiResponse(success=True, message=f"Error: {e}", data={"current": "main", "branches": []})
+
+
+@router.post("/{project_id}/git/branches", response_model=ApiResponse)
+def create_git_branch(
+    project_id: str,
+    body: _BranchCreateBody,
+    service: ProjectService = Depends(get_project_service),
+):
+    """Create and check out a new local branch."""
+    import subprocess
+    project = service.get_project(project_id)
+    if project is None:
+        raise HTTPException(status_code=404, detail="Project not found.")
+
+    repo_path = storage.repository_path(project.id)
+    if not repo_path.exists() or not (repo_path / ".git").exists():
+        raise HTTPException(status_code=400, detail="No git repository found.")
+
+    result = subprocess.run(
+        ["git", "checkout", "-b", body.name],
+        cwd=str(repo_path), capture_output=True, text=True, timeout=15,
+    )
+    if result.returncode != 0:
+        return ApiResponse(success=False, message=result.stderr.strip() or "Failed to create branch.")
+    return ApiResponse(success=True, message=f"Created and switched to branch '{body.name}'.")
+
+
+@router.post("/{project_id}/git/checkout", response_model=ApiResponse)
+def git_checkout_branch(
+    project_id: str,
+    body: _CheckoutBranchBody,
+    service: ProjectService = Depends(get_project_service),
+):
+    """Switch to an existing local branch."""
+    import subprocess
+    project = service.get_project(project_id)
+    if project is None:
+        raise HTTPException(status_code=404, detail="Project not found.")
+
+    repo_path = storage.repository_path(project.id)
+    if not repo_path.exists() or not (repo_path / ".git").exists():
+        raise HTTPException(status_code=400, detail="No git repository found.")
+
+    result = subprocess.run(
+        ["git", "checkout", body.branch],
+        cwd=str(repo_path), capture_output=True, text=True, timeout=15,
+    )
+    if result.returncode != 0:
+        return ApiResponse(success=False, message=result.stderr.strip() or "Checkout failed.")
+    return ApiResponse(success=True, message=f"Switched to '{body.branch}'.")
+
+
+@router.delete("/{project_id}/git/branches/{branch_name}", response_model=ApiResponse)
+def delete_git_branch(
+    project_id: str,
+    branch_name: str,
+    service: ProjectService = Depends(get_project_service),
+):
+    """Delete a local branch (must not be currently checked out)."""
+    import subprocess
+    project = service.get_project(project_id)
+    if project is None:
+        raise HTTPException(status_code=404, detail="Project not found.")
+
+    repo_path = storage.repository_path(project.id)
+    if not repo_path.exists() or not (repo_path / ".git").exists():
+        raise HTTPException(status_code=400, detail="No git repository found.")
+
+    result = subprocess.run(
+        ["git", "branch", "-d", branch_name],
+        cwd=str(repo_path), capture_output=True, text=True, timeout=15,
+    )
+    if result.returncode != 0:
+        return ApiResponse(success=False, message=result.stderr.strip() or "Delete failed.")
+    return ApiResponse(success=True, message=f"Branch '{branch_name}' deleted.")
 
 
 # ---------------------------------------------------------------------------
@@ -975,6 +1162,220 @@ def project_chat(
         success=True,
         message="OK",
         data={"message": reply, "model": model, "modified_files": [], "phase": "execute"},
+    )
+
+
+# ---------------------------------------------------------------------------
+# SSE streaming chat endpoint  (streams token-by-token to the frontend)
+# ---------------------------------------------------------------------------
+
+@router.post("/{project_id}/chat/stream")
+async def project_chat_stream(
+    project_id: str,
+    body: _ChatBody,
+    service: ProjectService = Depends(get_project_service),
+):
+    """
+    Streaming SSE version of project_chat.
+    Emits: {"type": "token"|"activity"|"done"|"error", ...}
+    Also parses '### File:' headers in the LLM response and writes those files to disk.
+    """
+    import os as _os
+    import json as _json
+    import re as _re
+    import httpx as _httpx
+    from fastapi.responses import StreamingResponse
+
+    project = service.get_project(project_id)
+    if project is None:
+        raise HTTPException(status_code=404, detail="Project not found.")
+
+    model = project.llm_model or body.model or "gpt-4o"
+    repo_path = storage.repository_path(project.id)
+    messages = list(body.messages)
+
+    user_text = next(
+        (m["content"] for m in reversed(messages)
+         if m.get("role") == "user" and isinstance(m.get("content"), str)),
+        "",
+    )
+    if repo_path.exists():
+        ctx = _build_context_prompt(repo_path, user_text)
+        if ctx:
+            messages = [{"role": "system", "content": ctx}] + messages
+
+    # Plan mode — return plan in one shot, then done
+    if body.require_plan:
+        plan_messages = [{"role": "system", "content": _PLAN_SYSTEM}] + [
+            m for m in messages if m.get("role") != "system"
+        ]
+        try:
+            plan_reply = _call_llm(model, plan_messages, body.temperature)
+        except Exception as e:
+            raise HTTPException(status_code=502, detail=str(e))
+
+        async def _plan_gen():
+            yield f"data: {_json.dumps({'type': 'token', 'content': plan_reply})}\n\n"
+            yield f"data: {_json.dumps({'type': 'done', 'modified_files': [], 'phase': 'plan'})}\n\n"
+
+        return StreamingResponse(
+            _plan_gen(), media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
+
+    if body.approved_plan:
+        exec_system = _EXECUTE_SYSTEM.format(plan=body.approved_plan)
+        messages = [{"role": "system", "content": exec_system}] + [
+            m for m in messages if m.get("role") != "system"
+        ]
+
+    def _parse_and_write_files(text: str, rpath: Path) -> list[str]:
+        """Parse ### File: headers from LLM response and write files to disk."""
+        written: list[str] = []
+        parts = _re.split(r'^### File:\s*(.+)$', text, flags=_re.MULTILINE)
+        i = 1
+        while i < len(parts) - 1:
+            fname = parts[i].strip()
+            block = parts[i + 1]
+            code_match = _re.search(r'```(?:\w+)?\n(.*?)```', block, _re.DOTALL)
+            content = code_match.group(1) if code_match else block.strip()
+            if fname and content:
+                target = (rpath / fname).resolve()
+                if str(target).startswith(str(rpath.resolve())):
+                    try:
+                        target.parent.mkdir(parents=True, exist_ok=True)
+                        target.write_text(content, encoding="utf-8")
+                        written.append(fname)
+                    except Exception:
+                        pass
+            i += 2
+        return written
+
+    async def generate():
+        full_response = ""
+        seen_files: set[str] = set()
+
+        yield f"data: {_json.dumps({'type': 'activity', 'step': 'Thinking…'})}\n\n"
+
+        try:
+            if "mistral" in model.lower():
+                api_key = _os.getenv("MISTRAL_API_KEY", "")
+                async with _httpx.AsyncClient(timeout=90) as client:
+                    async with client.stream(
+                        "POST",
+                        "https://api.mistral.ai/v1/chat/completions",
+                        headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+                        json={"model": model, "messages": messages, "temperature": body.temperature, "stream": True},
+                    ) as resp:
+                        async for line in resp.aiter_lines():
+                            if not line.startswith("data: "):
+                                continue
+                            raw = line[6:]
+                            if raw.strip() == "[DONE]":
+                                break
+                            try:
+                                chunk = _json.loads(raw)
+                                token = chunk["choices"][0]["delta"].get("content", "")
+                                if token:
+                                    full_response += token
+                                    yield f"data: {_json.dumps({'type': 'token', 'content': token})}\n\n"
+                                    for ln in full_response.split("\n"):
+                                        if ln.startswith("### File:"):
+                                            fn = ln.replace("### File:", "").strip()
+                                            if fn and fn not in seen_files:
+                                                seen_files.add(fn)
+                                                yield f"data: {_json.dumps({'type': 'activity', 'step': f'Writing {fn}'})}\n\n"
+                            except Exception:
+                                pass
+
+            elif "gpt" in model.lower() or "openai" in model.lower():
+                api_key = _os.getenv("OPENAI_API_KEY", "")
+                async with _httpx.AsyncClient(timeout=90) as client:
+                    async with client.stream(
+                        "POST",
+                        "https://api.openai.com/v1/chat/completions",
+                        headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+                        json={"model": model, "messages": messages, "temperature": body.temperature, "stream": True},
+                    ) as resp:
+                        async for line in resp.aiter_lines():
+                            if not line.startswith("data: "):
+                                continue
+                            raw = line[6:]
+                            if raw.strip() == "[DONE]":
+                                break
+                            try:
+                                chunk = _json.loads(raw)
+                                token = chunk["choices"][0]["delta"].get("content", "")
+                                if token:
+                                    full_response += token
+                                    yield f"data: {_json.dumps({'type': 'token', 'content': token})}\n\n"
+                                    for ln in full_response.split("\n"):
+                                        if ln.startswith("### File:"):
+                                            fn = ln.replace("### File:", "").strip()
+                                            if fn and fn not in seen_files:
+                                                seen_files.add(fn)
+                                                yield f"data: {_json.dumps({'type': 'activity', 'step': f'Writing {fn}'})}\n\n"
+                            except Exception:
+                                pass
+
+            elif "claude" in model.lower() or "anthropic" in model.lower():
+                api_key = _os.getenv("ANTHROPIC_API_KEY", "")
+                sys_msgs = [m["content"] for m in messages if m.get("role") == "system"]
+                chat_msgs = [m for m in messages if m.get("role") != "system"]
+                payload: dict = {"model": model, "max_tokens": 4096, "messages": chat_msgs, "stream": True}
+                if sys_msgs:
+                    payload["system"] = "\n".join(sys_msgs)
+                async with _httpx.AsyncClient(timeout=90) as client:
+                    async with client.stream(
+                        "POST",
+                        "https://api.anthropic.com/v1/messages",
+                        headers={"x-api-key": api_key, "anthropic-version": "2023-06-01", "Content-Type": "application/json"},
+                        json=payload,
+                    ) as resp:
+                        async for line in resp.aiter_lines():
+                            if not line.startswith("data: "):
+                                continue
+                            try:
+                                data = _json.loads(line[6:])
+                                if data.get("type") == "content_block_delta":
+                                    token = data.get("delta", {}).get("text", "")
+                                    if token:
+                                        full_response += token
+                                        yield f"data: {_json.dumps({'type': 'token', 'content': token})}\n\n"
+                                        for ln in full_response.split("\n"):
+                                            if ln.startswith("### File:"):
+                                                fn = ln.replace("### File:", "").strip()
+                                                if fn and fn not in seen_files:
+                                                    seen_files.add(fn)
+                                                    yield f"data: {_json.dumps({'type': 'activity', 'step': f'Writing {fn}'})}\n\n"
+                            except Exception:
+                                pass
+
+            else:
+                # Fallback: non-streaming call
+                reply = _call_llm(model, messages, body.temperature)
+                full_response = reply
+                yield f"data: {_json.dumps({'type': 'token', 'content': reply})}\n\n"
+
+        except Exception as exc:
+            yield f"data: {_json.dumps({'type': 'error', 'message': str(exc)})}\n\n"
+            return
+
+        # Parse ### File: headers and write files to disk
+        written = _parse_and_write_files(full_response, repo_path)
+        if not written:
+            written = list(seen_files)
+
+        # Auto-commit
+        if repo_path.exists():
+            first_line = full_response.split("\n")[0].strip()
+            _auto_commit(repo_path, first_line or "agent turn")
+
+        yield f"data: {_json.dumps({'type': 'done', 'modified_files': written, 'phase': 'execute'})}\n\n"
+
+    return StreamingResponse(
+        generate(), media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
 
 

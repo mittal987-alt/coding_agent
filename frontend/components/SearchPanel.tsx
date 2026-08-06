@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { Search, X, FileCode, Loader2, ChevronDown, ChevronRight, CaseSensitive } from "lucide-react";
+import { Search, X, FileCode, Loader2, ChevronDown, ChevronRight, CaseSensitive, ReplaceAll } from "lucide-react";
 
 type SearchResult = {
   path: string;
@@ -49,6 +49,8 @@ export default function SearchPanel({
   const [results, setResults] = useState<SearchResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [resultMsg, setResultMsg] = useState<string | null>(null);
+  const [replaceStr, setReplaceStr] = useState("");
+  const [isReplacing, setIsReplacing] = useState(false);
   const [collapsedFiles, setCollapsedFiles] = useState<Set<string>>(new Set());
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -100,6 +102,30 @@ export default function SearchPanel({
     });
   };
 
+  const handleReplace = async () => {
+    if (!query.trim()) return;
+    if (!confirm(`Are you sure you want to replace all occurrences of '${query}' with '${replaceStr}'? This action cannot be easily undone.`)) return;
+    setIsReplacing(true);
+    try {
+      const res = await fetch(`http://localhost:8000/api/v1/projects/${projectId}/files/replace`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ search: query, replace: replaceStr, case_sensitive: caseSensitive })
+      });
+      const json = await res.json();
+      if (json.success) {
+        setResultMsg(json.message);
+        doSearch(query); // refresh results
+      } else {
+        setResultMsg(json.message || "Replace failed");
+      }
+    } catch {
+      setResultMsg("Replace failed to reach backend.");
+    } finally {
+      setIsReplacing(false);
+    }
+  };
+
   return (
     <div className="flex flex-col h-full overflow-hidden text-sm">
       {/* Search input bar */}
@@ -131,10 +157,33 @@ export default function SearchPanel({
             <CaseSensitive size={13} />
           </button>
         </div>
+        
+        {/* Replace Input - shown if we have a query */}
+        {query.trim().length >= 2 && (
+          <div className="flex items-center gap-1.5 mt-2 bg-gray-900 border border-gray-700 rounded-lg px-2.5 py-1.5 focus-within:border-blue-500 transition-colors">
+            <ReplaceAll size={13} className="text-gray-500 shrink-0" />
+            <input
+              value={replaceStr}
+              onChange={(e) => setReplaceStr(e.target.value)}
+              placeholder="Replace with…"
+              className="flex-1 bg-transparent outline-none text-xs text-gray-200 placeholder-gray-600 min-w-0"
+            />
+            {results.length > 0 && (
+              <button
+                onClick={handleReplace}
+                disabled={isReplacing}
+                className="bg-blue-600 hover:bg-blue-500 disabled:bg-gray-700 disabled:text-gray-500 text-white text-[10px] px-2 py-0.5 rounded transition-colors"
+              >
+                {isReplacing ? <Loader2 size={10} className="animate-spin" /> : "Replace All"}
+              </button>
+            )}
+          </div>
+        )}
+
         {resultMsg && query.trim().length >= 2 && !isSearching && (
           <p className="text-[10px] text-gray-500 mt-1.5 px-0.5">
             {resultMsg}
-            {fileCount > 0 && ` — ${fileCount} file${fileCount > 1 ? "s" : ""}`}
+            {fileCount > 0 && !resultMsg.includes("Replaced") && ` — ${fileCount} file${fileCount > 1 ? "s" : ""}`}
           </p>
         )}
       </div>

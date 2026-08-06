@@ -726,8 +726,17 @@ def git_push(
     target_branch = body.branch or project.default_branch or "main"
     remote = body.remote or "origin"
 
-    # Set up remote URL if project has repository_url and origin remote is missing
-    if project.repository_url:
+    # Build authenticated remote URL using stored GitHub PAT if available
+    repo_url = project.repository_url
+    if repo_url and hasattr(project, "github_token") and project.github_token:
+        # Embed token: https://TOKEN@github.com/owner/repo.git
+        from urllib.parse import urlparse, urlunparse
+        parsed = urlparse(repo_url)
+        auth_url = urlunparse(parsed._replace(netloc=f"{project.github_token}@{parsed.netloc}"))
+        repo_url = auth_url
+
+    # Set up remote URL
+    if repo_url:
         try:
             remote_chk = subprocess.run(
                 ["git", "remote", "get-url", remote],
@@ -735,12 +744,12 @@ def git_push(
             )
             if remote_chk.returncode != 0:
                 subprocess.run(
-                    ["git", "remote", "add", remote, project.repository_url],
+                    ["git", "remote", "add", remote, repo_url],
                     cwd=str(repo_path), capture_output=True, text=True, timeout=5
                 )
             else:
                 subprocess.run(
-                    ["git", "remote", "set-url", remote, project.repository_url],
+                    ["git", "remote", "set-url", remote, repo_url],
                     cwd=str(repo_path), capture_output=True, text=True, timeout=5
                 )
         except Exception:
@@ -921,3 +930,93 @@ def git_rollback(
         return ApiResponse(success=True, message="Rolled back successfully.", data={"output": result.stdout.strip()})
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ---------------------------------------------------------------------------
+# Git revert single file (restore to HEAD)
+# ---------------------------------------------------------------------------
+
+class _RevertFileBody(_PydanticBase):
+    path: str
+
+
+@router.post("/{project_id}/git/revert-file", response_model=ApiResponse)
+def git_revert_file(
+    project_id: str,
+    body: _RevertFileBody,
+    service: ProjectService = Depends(get_project_service),
+):
+    """Restore a single file to its last committed state (git checkout HEAD -- <path>)."""
+    project = service.get_project(project_id)
+    if project is None:
+        raise HTTPException(status_code=404, detail="Project not found.")
+
+    repo_path = storage.repository_path(project.id)
+    if not repo_path.exists() or not (repo_path / ".git").exists():
+        raise HTTPException(status_code=400, detail="No git repository found.")
+
+    target = (repo_path / body.path).resolve()
+    if not str(target).startswith(str(repo_path.resolve())):
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    try:
+        result = subprocess.run(
+            ["git", "checkout", "HEAD", "--", body.path],
+            cwd=str(repo_path),
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if result.returncode != 0:
+            # File may be untracked (no HEAD version) — just report
+            return ApiResponse(
+                success=False,
+                message=result.stderr.strip() or "Could not revert file (no committed version?)",
+                data={},
+            )
+        # Read the restored content to send back to the frontend
+        try:
+            restored_content = target.read_text(encoding="utf-8")
+        except Exception:
+            restored_content = ""
+        return ApiResponse(
+            success=True,
+            message="File reverted to HEAD.",
+            data={"path": body.path, "content": restored_content},
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ---------------------------------------------------------------------------
+# Git file content at HEAD
+# ---------------------------------------------------------------------------
+
+@router.get("/{project_id}/git/file", response_model=ApiResponse)
+def git_file_at_head(
+    project_id: str,
+    path: str,
+    service: ProjectService = Depends(get_project_service),
+):
+    """Return the content of a file at git HEAD (for diff viewer original side)."""
+    project = service.get_project(project_id)
+    if project is None:
+        raise HTTPException(status_code=404, detail="Project not found.")
+
+    repo_path = storage.repository_path(project.id)
+    if not repo_path.exists() or not (repo_path / ".git").exists():
+        return ApiResponse(success=False, message="No git repo", data="")
+
+    try:
+        result = subprocess.run(
+            ["git", "show", f"HEAD:{path}"],
+            cwd=str(repo_path),
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if result.returncode != 0:
+            return ApiResponse(success=False, message="File not in HEAD", data="")
+        return ApiResponse(success=True, message="Success", data=result.stdout)
+    except Exception as e:
+        return ApiResponse(success=False, message=str(e), data="")

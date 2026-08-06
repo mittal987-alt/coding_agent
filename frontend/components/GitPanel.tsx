@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { Loader2, GitBranch, GitCommit, Check, ChevronDown, ChevronRight, RefreshCw, Upload } from "lucide-react";
+import { Loader2, GitBranch, GitCommit, Check, ChevronDown, ChevronRight, RefreshCw, Upload, Plus, Trash2 } from "lucide-react";
 
 type FileStatus = "modified" | "untracked" | "staged" | "deleted";
 
@@ -42,6 +42,23 @@ export default function GitPanel({ projectId }: { projectId: string }) {
   const [showLog, setShowLog] = useState(false);
   const [isLoadingLog, setIsLoadingLog] = useState(false);
 
+  const [branches, setBranches] = useState<{current: string, branches: string[]}>({ current: "main", branches: [] });
+  const [showBranches, setShowBranches] = useState(false);
+  const [newBranchName, setNewBranchName] = useState("");
+  const [isBranchLoading, setIsBranchLoading] = useState(false);
+
+  const loadBranches = useCallback(async () => {
+    try {
+      const res = await fetch(`http://localhost:8000/api/v1/projects/${projectId}/git/branches`);
+      const json = await res.json();
+      if (json.success && json.data) {
+        setBranches(json.data);
+      }
+    } catch {
+      // silently fail
+    }
+  }, [projectId]);
+
   const refreshStatus = useCallback(async () => {
     setIsLoadingStatus(true);
     try {
@@ -78,8 +95,9 @@ export default function GitPanel({ projectId }: { projectId: string }) {
 
   useEffect(() => {
     refreshStatus();
+    loadBranches();
     const interval = setInterval(refreshStatus, 3000);
-    const handleRefreshEvent = () => refreshStatus();
+    const handleRefreshEvent = () => { refreshStatus(); loadBranches(); };
     window.addEventListener("git-refresh", handleRefreshEvent);
     return () => {
       clearInterval(interval);
@@ -145,8 +163,124 @@ export default function GitPanel({ projectId }: { projectId: string }) {
     }
   };
 
+  const handleCreateBranch = async () => {
+    if (!newBranchName.trim()) return;
+    setIsBranchLoading(true);
+    try {
+      const res = await fetch(`http://localhost:8000/api/v1/projects/${projectId}/git/branches`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: newBranchName.trim() }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        setNewBranchName("");
+        await loadBranches();
+        await refreshStatus();
+      }
+    } finally {
+      setIsBranchLoading(false);
+    }
+  };
+
+  const handleCheckoutBranch = async (branch: string) => {
+    if (branch === branches.current) return;
+    setIsBranchLoading(true);
+    try {
+      const res = await fetch(`http://localhost:8000/api/v1/projects/${projectId}/git/checkout`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ branch }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        await loadBranches();
+        await refreshStatus();
+        if (showLog) await loadLog();
+      }
+    } finally {
+      setIsBranchLoading(false);
+    }
+  };
+
+  const handleDeleteBranch = async (branch: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (branch === branches.current || !confirm(`Delete branch '${branch}'?`)) return;
+    setIsBranchLoading(true);
+    try {
+      const res = await fetch(`http://localhost:8000/api/v1/projects/${projectId}/git/branches/${encodeURIComponent(branch)}`, {
+        method: "DELETE",
+      });
+      const json = await res.json();
+      if (json.success) {
+        await loadBranches();
+      }
+    } finally {
+      setIsBranchLoading(false);
+    }
+  };
+
   return (
     <div className="flex flex-col h-full text-sm overflow-hidden">
+      {/* Branches section */}
+      <div className="border-b border-gray-800">
+        <button
+          onClick={() => setShowBranches(!showBranches)}
+          className="flex items-center gap-2 w-full px-4 py-2 text-xs text-gray-400 hover:text-gray-200 hover:bg-gray-800/50 transition-colors"
+        >
+          {showBranches ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+          <span className="font-semibold uppercase tracking-wider flex items-center gap-2">
+            Branches <span className="bg-blue-500/20 text-blue-400 px-1.5 py-0.5 rounded normal-case font-mono">{branches.current}</span>
+          </span>
+          {isBranchLoading && <Loader2 size={10} className="animate-spin ml-auto" />}
+        </button>
+        {showBranches && (
+          <div className="bg-gray-900/30 py-2 border-t border-gray-800/50">
+            <div className="px-4 pb-2 flex gap-2">
+              <input 
+                type="text" 
+                value={newBranchName}
+                onChange={(e) => setNewBranchName(e.target.value)}
+                placeholder="New branch name..."
+                className="flex-1 bg-gray-900 border border-gray-700 rounded px-2 py-1 text-xs text-gray-200 focus:outline-none focus:border-blue-500"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") handleCreateBranch();
+                }}
+              />
+              <button
+                onClick={handleCreateBranch}
+                disabled={!newBranchName.trim() || isBranchLoading}
+                className="p-1 bg-gray-800 hover:bg-gray-700 rounded disabled:opacity-50 text-gray-300"
+                title="Create branch"
+              >
+                <Plus size={14} />
+              </button>
+            </div>
+            <ul className="max-h-32 overflow-y-auto">
+              {branches.branches.map(b => (
+                <li 
+                  key={b}
+                  onClick={() => handleCheckoutBranch(b)}
+                  className={`flex items-center gap-2 px-4 py-1.5 text-xs cursor-pointer group ${b === branches.current ? 'bg-blue-500/10 text-blue-400' : 'text-gray-300 hover:bg-gray-800/50'}`}
+                >
+                  <GitBranch size={12} className={b === branches.current ? 'text-blue-500' : 'text-gray-500'} />
+                  <span className="font-mono flex-1">{b}</span>
+                  {b !== branches.current && (
+                    <button 
+                      onClick={(e) => handleDeleteBranch(b, e)}
+                      className="opacity-0 group-hover:opacity-100 p-1 text-gray-500 hover:text-red-400 rounded transition-all"
+                      title="Delete branch"
+                    >
+                      <Trash2 size={12} />
+                    </button>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </div>
+
       {/* Changes section */}
       <div className="flex items-center justify-between px-4 py-2 border-b border-gray-800">
         <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">

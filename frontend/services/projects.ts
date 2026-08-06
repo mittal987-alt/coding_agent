@@ -6,8 +6,12 @@ export interface Project {
   description: string;
   repository_path: string;
   repository_url?: string;
+  default_branch?: string;
+  github_token?: string;
   llm_model?: string;
+  system_prompt?: string;
   language: string;
+  framework?: string;
   status: string;
   created_at: string;
   updated_at: string;
@@ -28,7 +32,10 @@ export interface ProjectUpdate {
   name?: string;
   description?: string;
   repository_url?: string;
+  default_branch?: string;
+  github_token?: string;
   llm_model?: string;
+  system_prompt?: string;
   language?: string;
   framework?: string;
   archived?: boolean;

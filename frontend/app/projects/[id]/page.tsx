@@ -1,16 +1,21 @@
 "use client";
 
-import React, { useEffect, useRef, useState, useCallback } from "react";
+import React, { useEffect, useRef, useState, useCallback, useLayoutEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, Loader2, MessageSquare, Terminal, FileCode, Play, Folder, Settings, Send, PanelLeft, PanelRight, PanelBottom, Save, GitBranch, Search, FilePlus, FolderPlus, Trash2, Edit3 } from "lucide-react";
+import { ArrowLeft, Loader2, MessageSquare, Terminal, FileCode, Play, Folder, Settings, Send, PanelLeft, PanelRight, PanelBottom, Save, GitBranch, Search, FilePlus, FolderPlus, Trash2, Edit3, Brain, Zap, Circle, X, Sun, Moon, BarChart3, Database, Command } from "lucide-react";
 import { ProjectService, Project } from "@/services/projects";
 import Link from "next/link";
 import ReactMarkdown from "react-markdown";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";
 import remarkGfm from "remark-gfm";
-import Editor from "@monaco-editor/react";
+import Editor, { useMonaco } from "@monaco-editor/react";
+import type * as Monaco from "monaco-editor";
 import dynamic from "next/dynamic";
+import { useToast } from "@/components/ToastProvider";
+import OnboardingWizard from "@/components/OnboardingWizard";
+import ProjectDashboardModal from "@/components/ProjectDashboardModal";
+import CommandPalette from "@/components/CommandPalette";
 import {
   Panel,
   PanelGroup,
@@ -22,6 +27,9 @@ import { SearchModal } from "@/components/searchModel";
 import { KeyboardShortcutsModal } from "@/components/KeyboardShortcutsModal";
 import GitPanel from "@/components/GitPanel";
 import SearchPanel from "@/components/SearchPanel";
+import AgentActivityLog from "@/components/AgentActivityLog";
+import DiffViewer from "@/components/DiffViewer";
+import PreviewPanel from "@/components/PreviewPanel";
 const IDETerminal = dynamic(
   () => import("@/components/terminal"),
   {
@@ -34,6 +42,8 @@ type Message = {
   role: "user" | "assistant";
   content: string;
   modifiedFiles?: string[];
+  activities?: string[];
+  images?: string[];
 };
 
 type FileStatus = "modified" | "untracked" | "staged" | "deleted";
@@ -51,6 +61,30 @@ type TerminalSession = {
   sessionId: string;
   label: string;
 };
+
+type ContextMenuState = {
+  x: number;
+  y: number;
+  node: FileNode;
+} | null;
+
+/* ─── File-type icon colours ─── */
+const FILE_EXT_COLOR: Record<string, string> = {
+  ts: "text-blue-400", tsx: "text-blue-300", js: "text-yellow-400", jsx: "text-yellow-300",
+  py: "text-green-400", json: "text-yellow-500", md: "text-gray-300", css: "text-pink-400",
+  html: "text-orange-400", sh: "text-teal-400", yaml: "text-red-400", yml: "text-red-400",
+  toml: "text-orange-300", rs: "text-orange-500", go: "text-cyan-400", java: "text-red-500",
+  cpp: "text-blue-500", c: "text-blue-500", rb: "text-red-400", php: "text-purple-400",
+  sql: "text-green-300", env: "text-yellow-300", gitignore: "text-gray-400",
+  lock: "text-gray-500", txt: "text-gray-400",
+};
+
+function fileIconColor(name: string): string {
+  const ext = name.split(".").pop()?.toLowerCase() || "";
+  if (name === ".env" || name.startsWith(".env.")) return FILE_EXT_COLOR.env;
+  if (name === ".gitignore") return FILE_EXT_COLOR.gitignore;
+  return FILE_EXT_COLOR[ext] || "text-gray-400";
+}
 
 const SUGGESTED_PROMPTS = [
   "Set up the project structure",
@@ -143,6 +177,7 @@ function FileNodeItem({
   onCreateFolder,
   onRename,
   onDelete,
+  onContextMenu,
 }: {
   node: FileNode;
   depth?: number;
@@ -152,13 +187,17 @@ function FileNodeItem({
   onCreateFolder: (parentPath?: string) => void;
   onRename: (path: string, currentName: string) => void;
   onDelete: (path: string) => void;
+  onContextMenu: (e: React.MouseEvent, node: FileNode) => void;
 }) {
   const [isOpen, setIsOpen] = useState(node.type === "directory" && depth === 0);
 
   if (node.type === "directory") {
     return (
       <div className="group">
-        <div className="flex items-center justify-between w-full hover:bg-gray-800/50 rounded-sm pr-1 transition-colors group/row">
+        <div
+          className="flex items-center justify-between w-full hover:bg-gray-800/50 rounded-sm pr-1 transition-colors group/row"
+          onContextMenu={(e) => onContextMenu(e, node)}
+        >
           <button
             onClick={() => setIsOpen(!isOpen)}
             className="flex items-center gap-1.5 flex-1 min-w-0 text-left py-1 px-1.5 text-gray-300 text-xs truncate"
@@ -169,34 +208,10 @@ function FileNodeItem({
             <span className="truncate text-gray-200 font-normal">{node.name}</span>
           </button>
           <div className="opacity-0 group-hover/row:opacity-100 flex items-center gap-0.5 shrink-0 transition-opacity">
-            <button
-              onClick={(e) => { e.stopPropagation(); onCreateFile(node.path); }}
-              title="New File"
-              className="p-1 text-gray-400 hover:text-white hover:bg-gray-700/60 rounded transition-colors"
-            >
-              <FilePlus size={12} />
-            </button>
-            <button
-              onClick={(e) => { e.stopPropagation(); onCreateFolder(node.path); }}
-              title="New Folder"
-              className="p-1 text-gray-400 hover:text-white hover:bg-gray-700/60 rounded transition-colors"
-            >
-              <FolderPlus size={12} />
-            </button>
-            <button
-              onClick={(e) => { e.stopPropagation(); onRename(node.path, node.name); }}
-              title="Rename"
-              className="p-1 text-gray-400 hover:text-white hover:bg-gray-700/60 rounded transition-colors"
-            >
-              <Edit3 size={12} />
-            </button>
-            <button
-              onClick={(e) => { e.stopPropagation(); onDelete(node.path); }}
-              title="Delete"
-              className="p-1 text-gray-400 hover:text-red-400 hover:bg-gray-700/60 rounded transition-colors"
-            >
-              <Trash2 size={12} />
-            </button>
+            <button onClick={(e) => { e.stopPropagation(); onCreateFile(node.path); }} title="New File" className="p-1 text-gray-400 hover:text-white hover:bg-gray-700/60 rounded transition-colors"><FilePlus size={12} /></button>
+            <button onClick={(e) => { e.stopPropagation(); onCreateFolder(node.path); }} title="New Folder" className="p-1 text-gray-400 hover:text-white hover:bg-gray-700/60 rounded transition-colors"><FolderPlus size={12} /></button>
+            <button onClick={(e) => { e.stopPropagation(); onRename(node.path, node.name); }} title="Rename" className="p-1 text-gray-400 hover:text-white hover:bg-gray-700/60 rounded transition-colors"><Edit3 size={12} /></button>
+            <button onClick={(e) => { e.stopPropagation(); onDelete(node.path); }} title="Delete" className="p-1 text-gray-400 hover:text-red-400 hover:bg-gray-700/60 rounded transition-colors"><Trash2 size={12} /></button>
           </div>
         </div>
         {isOpen && node.children && (
@@ -212,6 +227,7 @@ function FileNodeItem({
                 onCreateFolder={onCreateFolder}
                 onRename={onRename}
                 onDelete={onDelete}
+                onContextMenu={onContextMenu}
               />
             ))}
           </div>
@@ -221,18 +237,20 @@ function FileNodeItem({
   }
 
   const isSelected = selectedPath === node.path;
+  const iconColor = fileIconColor(node.name);
   return (
     <div
       className={`flex items-center justify-between w-full py-1 px-1.5 rounded-sm text-xs group/row transition-colors ${
         isSelected ? "bg-blue-600/25 text-blue-300 font-medium" : "hover:bg-gray-800/50 text-gray-400"
       }`}
       style={{ paddingLeft: `${8 + depth * 12}px` }}
+      onContextMenu={(e) => onContextMenu(e, node)}
     >
       <button
         onClick={() => onFileClick(node.path)}
         className="flex items-center gap-1.5 flex-1 min-w-0 text-left truncate pr-1"
       >
-        <FileCode size={13} className={isSelected ? "text-blue-400 shrink-0" : "text-gray-500 shrink-0"} />
+        <FileCode size={13} className={`shrink-0 ${isSelected ? "text-blue-400" : iconColor}`} />
         <span className="truncate">{node.name}</span>
         {node.status && (
           <span className={`ml-1 text-[10px] font-bold shrink-0 ${statusColor(node.status)}`}>
@@ -241,20 +259,8 @@ function FileNodeItem({
         )}
       </button>
       <div className="opacity-0 group-hover/row:opacity-100 flex items-center gap-0.5 shrink-0 transition-opacity">
-        <button
-          onClick={(e) => { e.stopPropagation(); onRename(node.path, node.name); }}
-          title="Rename"
-          className="p-1 text-gray-400 hover:text-white hover:bg-gray-700/60 rounded transition-colors"
-        >
-          <Edit3 size={12} />
-        </button>
-        <button
-          onClick={(e) => { e.stopPropagation(); onDelete(node.path); }}
-          title="Delete"
-          className="p-1 text-gray-400 hover:text-red-400 hover:bg-gray-700/60 rounded transition-colors"
-        >
-          <Trash2 size={12} />
-        </button>
+        <button onClick={(e) => { e.stopPropagation(); onRename(node.path, node.name); }} title="Rename" className="p-1 text-gray-400 hover:text-white hover:bg-gray-700/60 rounded transition-colors"><Edit3 size={12} /></button>
+        <button onClick={(e) => { e.stopPropagation(); onDelete(node.path); }} title="Delete" className="p-1 text-gray-400 hover:text-red-400 hover:bg-gray-700/60 rounded transition-colors"><Trash2 size={12} /></button>
       </div>
     </div>
   );
@@ -272,107 +278,34 @@ function flattenPaths(nodes: FileNode[]): string[] {
   return out;
 }
 
-// ---------------------------------------------------------------------------
-// Fuzzy file finder modal (Ctrl+P)
-// ---------------------------------------------------------------------------
-function FileFinder({
-  paths,
-  onSelect,
-  onClose,
-}: {
-  paths: string[];
-  onSelect: (path: string) => void;
-  onClose: () => void;
-}) {
-  const [query, setQuery] = useState("");
-  const inputRef = useRef<HTMLInputElement>(null);
-  const [cursor, setCursor] = useState(0);
-
-  const filtered = query
-    ? paths.filter((p) => p.toLowerCase().includes(query.toLowerCase())).slice(0, 20)
-    : paths.slice(0, 20);
-
-  useEffect(() => {
-    inputRef.current?.focus();
-  }, []);
-
-  useEffect(() => {
-    setCursor(0);
-  }, [query]);
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "ArrowDown") {
-      e.preventDefault();
-      setCursor((c) => Math.min(c + 1, filtered.length - 1));
-    } else if (e.key === "ArrowUp") {
-      e.preventDefault();
-      setCursor((c) => Math.max(c - 1, 0));
-    } else if (e.key === "Enter") {
-      if (filtered[cursor]) onSelect(filtered[cursor]);
-    } else if (e.key === "Escape") {
-      onClose();
-    }
-  };
-
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-start justify-center pt-24 bg-black/60 backdrop-blur-sm"
-      onClick={onClose}
-    >
-      <div
-        className="w-[560px] bg-[#1e1e1e] border border-gray-700 rounded-xl shadow-2xl overflow-hidden"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center gap-2 px-4 py-3 border-b border-gray-700">
-          <Search size={15} className="text-gray-400 shrink-0" />
-          <input
-            ref={inputRef}
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="Go to file…"
-            className="flex-1 bg-transparent outline-none text-sm text-gray-100 placeholder-gray-500"
-          />
-          <span className="text-xs text-gray-600">ESC to close</span>
-        </div>
-        <ul className="max-h-80 overflow-y-auto">
-          {filtered.length === 0 && (
-            <li className="px-4 py-6 text-center text-xs text-gray-600">No files match</li>
-          )}
-          {filtered.map((p, i) => (
-            <li key={p}>
-              <button
-                onClick={() => onSelect(p)}
-                className={`w-full text-left px-4 py-2 text-xs font-mono transition-colors ${
-                  i === cursor
-                    ? "bg-blue-600/30 text-blue-300"
-                    : "text-gray-300 hover:bg-gray-800"
-                }`}
-              >
-                {p}
-              </button>
-            </li>
-          ))}
-        </ul>
-      </div>
-    </div>
-  );
-}
 
 export default function WorkspacePage() {
   const params = useParams();
   const router = useRouter();
   const projectId = params.id as string;
+  const { success, error, info } = useToast();
+
+  const [theme, setTheme] = useState<"dark" | "light">("dark");
+  const [isOnboardingOpen, setIsOnboardingOpen] = useState(false);
+  const [isDashboardOpen, setIsDashboardOpen] = useState(false);
+  const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
 
   const [project, setProject] = useState<Project | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [chatInput, setChatInput] = useState("");
+  const [chatImages, setChatImages] = useState<string[]>([]);
   const [isTyping, setIsTyping] = useState(false);
+  // Current agent name shown in the navbar pill (parsed from latest activity)
+  const [currentAgentLabel, setCurrentAgentLabel] = useState<string | null>(null);
 
   const [editorLanguage, setEditorLanguage] = useState("markdown");
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
+  
+  const [diffFile, setDiffFile] = useState<string | null>(null);
 
   const [openTabs, setOpenTabs] = useState<string[]>([]);
+  // Track which tabs have unsaved edits (dirty state)
+  const [dirtyTabs, setDirtyTabs] = useState<Set<string>>(new Set());
 
   const [fileContents, setFileContents] = useState<Record<string, string>>({});
   const [fileTree, setFileTree] = useState<FileNode[]>([]);
@@ -380,6 +313,14 @@ export default function WorkspacePage() {
 
   const [terminals, setTerminals] = useState<TerminalSession[]>([]);
   const [activeTerminalId, setActiveTerminalId] = useState<string | null>(null);
+
+  // Monaco editor instance and per-file model registry
+  const monacoRef = useRef<typeof Monaco | null>(null);
+  const editorRef = useRef<Monaco.editor.IStandaloneCodeEditor | null>(null);
+  const monacoModels = useRef<Map<string, Monaco.editor.ITextModel>>(new Map());
+
+  // Right-click context menu
+  const [contextMenu, setContextMenu] = useState<ContextMenuState>(null);
 
   const chatPanelRef = useRef<ImperativePanelHandle>(null);
   const repoPanelRef = useRef<ImperativePanelHandle>(null);
@@ -395,9 +336,6 @@ export default function WorkspacePage() {
   // Right panel tab: "files" | "git" | "search"
   const [rightTab, setRightTab] = useState<"files" | "git" | "search">("files");
 
-  // Fuzzy file finder
-  const [isFileFinderOpen, setIsFileFinderOpen] = useState(false);
-
   // File action modal state (New File / New Folder / Rename / Delete)
   const [fileActionModal, setFileActionModal] = useState<{
     type: "create_file" | "create_folder" | "rename" | "delete" | null;
@@ -405,6 +343,27 @@ export default function WorkspacePage() {
     name?: string;
   }>({ type: null, path: "" });
   const [fileInputName, setFileInputName] = useState("");
+
+  /* ── Close context menu on any outside click ── */
+  useEffect(() => {
+    if (!contextMenu) return;
+    const handler = () => setContextMenu(null);
+    window.addEventListener("click", handler);
+    window.addEventListener("contextmenu", handler);
+    return () => {
+      window.removeEventListener("click", handler);
+      window.removeEventListener("contextmenu", handler);
+    };
+  }, [contextMenu]);
+
+  const handleContextMenu = useCallback(
+    (e: React.MouseEvent, node: FileNode) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setContextMenu({ x: e.clientX, y: e.clientY, node });
+    },
+    []
+  );
 
   const handleFileActionSubmit = async () => {
     if (!fileActionModal.type) return;
@@ -497,13 +456,42 @@ export default function WorkspacePage() {
     else panel.collapse();
   }, []);
 
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: "1",
-      role: "assistant",
-      content: "Hello! I am your autonomous AI agent. How can I help you today?",
-    },
-  ]);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [hasLoadedMessages, setHasLoadedMessages] = useState(false);
+
+  // Load chat history
+  useEffect(() => {
+    if (!projectId) return;
+    try {
+      const saved = localStorage.getItem(`chat-history-${projectId}`);
+      if (saved) {
+        setMessages(JSON.parse(saved));
+      } else {
+        setMessages([{
+          id: "1",
+          role: "assistant",
+          content: "Hello! I am your autonomous AI agent. How can I help you today?",
+        }]);
+      }
+    } catch {
+      setMessages([{
+        id: "1",
+        role: "assistant",
+        content: "Hello! I am your autonomous AI agent. How can I help you today?",
+      }]);
+    }
+    setHasLoadedMessages(true);
+  }, [projectId]);
+
+  // Save chat history
+  useEffect(() => {
+    if (!hasLoadedMessages || !projectId) return;
+    try {
+      localStorage.setItem(`chat-history-${projectId}`, JSON.stringify(messages));
+    } catch {
+      //
+    }
+  }, [messages, hasLoadedMessages, projectId]);
 
   // Dedupe-safe tab opener
   const openTab = (path: string) => {
@@ -518,7 +506,9 @@ export default function WorkspacePage() {
   // Save current file to backend
   const saveCurrentFile = useCallback(async () => {
     if (!selectedFile) return;
-    const content = fileContents[selectedFile];
+    // Get latest content from Monaco model if available, else fall back to state
+    const model = monacoModels.current.get(selectedFile);
+    const content = model ? model.getValue() : fileContents[selectedFile];
     if (content === undefined) return;
     setIsSavingFile(true);
     try {
@@ -530,12 +520,12 @@ export default function WorkspacePage() {
           body: JSON.stringify({ content }),
         }
       );
-      setFileSaveMsg("Saved");
+      success(`Saved ${selectedFile.split("/").pop()}`);
+      // Clear dirty state for this file
+      setDirtyTabs((prev) => { const next = new Set(prev); next.delete(selectedFile!); return next; });
       window.dispatchEvent(new Event("git-refresh"));
-      setTimeout(() => setFileSaveMsg(null), 2000);
     } catch {
-      setFileSaveMsg("Save failed");
-      setTimeout(() => setFileSaveMsg(null), 2500);
+      error(`Failed to save ${selectedFile.split("/").pop()}`);
     } finally {
       setIsSavingFile(false);
     }
@@ -553,7 +543,7 @@ export default function WorkspacePage() {
       }
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "p") {
         e.preventDefault();
-        setIsFileFinderOpen((prev) => !prev);
+        setIsCommandPaletteOpen((prev) => !prev);
       }
       if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === "f") {
         e.preventDefault();
@@ -578,7 +568,7 @@ export default function WorkspacePage() {
         setIsShortcutsOpen((prev) => !prev);
       }
       if (e.key === "Escape") {
-        setIsFileFinderOpen(false);
+        setIsCommandPaletteOpen(false);
         setIsShortcutsOpen(false);
       }
     };
@@ -641,17 +631,25 @@ export default function WorkspacePage() {
       id: Date.now().toString(),
       role: "user",
       content: userContent,
+      images: chatImages.length > 0 ? [...chatImages] : undefined,
     };
 
     setMessages((prev) => [...prev, newUserMsg]);
     setChatInput("");
+    setChatImages([]);
     setIsTyping(true);
 
-    try {
-      const historyToSend = messages.map((msg) => ({ role: msg.role, content: msg.content }));
-      historyToSend.push({ role: "user", content: userContent });
+    const aiMsgId = (Date.now() + 1).toString();
+    setMessages((prev) => [
+      ...prev,
+      { id: aiMsgId, role: "assistant", content: "", activities: [] },
+    ]);
 
-      const response = await fetch(`http://localhost:8000/api/v1/projects/${projectId}/chat`, {
+    try {
+      const historyToSend = messages.map((msg) => ({ role: msg.role, content: msg.content, images: msg.images }));
+      historyToSend.push({ role: "user", content: userContent, images: chatImages.length > 0 ? chatImages : undefined });
+
+      const res = await fetch(`http://localhost:8000/api/v1/projects/${projectId}/chat/stream`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -662,27 +660,62 @@ export default function WorkspacePage() {
         }),
       });
 
-      if (!response.ok) {
-        throw new Error(`API returned status: ${response.status}`);
-      }
+      if (!res.body) throw new Error("No body");
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
 
-      const data = await response.json();
-
-      const aiResponse: Message = {
-        id: Date.now().toString(),
-        role: "assistant",
-        content: data.message || "Done!",
-        modifiedFiles: data.modified_files || [],
-      };
-      setMessages((prev) => [...prev, aiResponse]);
-
-      // If files were written, refresh the tree and open the first file
-      if (data.modified_files && data.modified_files.length > 0) {
-        const treeRes = await fetch(`http://localhost:8000/api/v1/projects/${projectId}/files`);
-        const treeJson = await treeRes.json();
-        if (treeJson.success) setFileTree(treeJson.data || []);
-
-        handleFileClick(data.modified_files[0]);
+      let buffer = "";
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n\n");
+        buffer = lines.pop() || "";
+        for (const line of lines) {
+          if (line.startsWith("data: ")) {
+            const dataStr = line.slice(6);
+            if (!dataStr.trim()) continue;
+            try {
+              const parsed = JSON.parse(dataStr);
+              if (parsed.type === "token") {
+                setMessages((prev) => prev.map((m) => {
+                  if (m.id === aiMsgId) return { ...m, content: m.content + parsed.content };
+                  return m;
+                }));
+              } else if (parsed.type === "activity") {
+                setCurrentAgentLabel(parsed.step);
+                setMessages((prev) => prev.map((m) => {
+                  if (m.id === aiMsgId) return { ...m, activities: [...(m.activities || []), parsed.step] };
+                  return m;
+                }));
+              } else if (parsed.type === "done") {
+                setCurrentAgentLabel(null);
+                setMessages((prev) => prev.map((m) => {
+                  if (m.id === aiMsgId) return { ...m, modifiedFiles: parsed.modified_files, activities: [] };
+                  return m;
+                }));
+                if (parsed.modified_files && parsed.modified_files.length > 0) {
+                  // Invalidate cached models so they reload fresh from disk
+                  for (const f of parsed.modified_files) {
+                    const norm = normalizePath(f);
+                    const model = monacoModels.current.get(norm);
+                    if (model) { model.dispose(); monacoModels.current.delete(norm); }
+                    setFileContents((prev) => { const next = { ...prev }; delete next[norm]; return next; });
+                  }
+                  refreshFileTree();
+                  handleFileClick(parsed.modified_files[0]);
+                }
+              } else if (parsed.type === "error") {
+                setMessages((prev) => prev.map((m) => {
+                  if (m.id === aiMsgId) return { ...m, content: m.content + `\n\n**Error:** ${parsed.message}` };
+                  return m;
+                }));
+              }
+            } catch (e) {
+              console.error("Parse error", e);
+            }
+          }
+        }
       }
     } catch (error) {
       console.error("Failed to fetch from LLM API:", error);
@@ -694,6 +727,7 @@ export default function WorkspacePage() {
       setMessages((prev) => [...prev, errorMsg]);
     } finally {
       setIsTyping(false);
+      setCurrentAgentLabel(null);
     }
   };
 
@@ -715,37 +749,47 @@ export default function WorkspacePage() {
     setSelectedFile(path);
     setEditorLanguage(getLanguageFromPath(path));
 
-    // Already opened / already have content -> just ensure tab exists
+    // Already have content in state -> just switch model
     if (fileContents[path] !== undefined) {
       openTab(path);
+      // Switch Monaco model immediately if editor is mounted
+      const model = monacoModels.current.get(path);
+      if (editorRef.current && model) {
+        editorRef.current.setModel(model);
+      }
       return;
     }
 
     try {
       const res = await fetch(
-        `http://localhost:8000/api/v1/projects/${projectId}/files/content?path=${encodeURIComponent(
-          path
-        )}`
+        `http://localhost:8000/api/v1/projects/${projectId}/files/content?path=${encodeURIComponent(path)}`
       );
-
       const json = await res.json();
-
       const content =
         json.success && json.data?.content !== undefined
           ? json.data.content
           : `// Could not load file: ${path}`;
 
-      setFileContents((prev) => ({
-        ...prev,
-        [path]: content,
-      }));
+      setFileContents((prev) => ({ ...prev, [path]: content }));
+
+      // Create a Monaco model for this file
+      if (monacoRef.current) {
+        const lang = getLanguageFromPath(path);
+        const uri = monacoRef.current.Uri.file(path);
+        let model = monacoRef.current.editor.getModel(uri);
+        if (!model) {
+          model = monacoRef.current.editor.createModel(content, lang, uri);
+        }
+        monacoModels.current.set(path, model);
+        if (editorRef.current) {
+          editorRef.current.setModel(model);
+        }
+      }
 
       openTab(path);
     } catch {
-      setFileContents((prev) => ({
-        ...prev,
-        [path]: `// Error loading file: ${path}`,
-      }));
+      const content = `// Error loading file: ${path}`;
+      setFileContents((prev) => ({ ...prev, [path]: content }));
       openTab(path);
     }
   };
@@ -874,9 +918,26 @@ export default function WorkspacePage() {
         </div>
         <div className="flex items-center gap-3">
           {/* Unified status pill: agent state + model, one place to look */}
-          <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-800 px-3 py-1.5 rounded-full">
-            <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-            Agent Idle
+          <div className={`flex items-center gap-2 text-xs px-3 py-1.5 rounded-full transition-all duration-300 ${
+              isTyping
+                ? "bg-blue-950/70 border border-blue-700/40 text-blue-300"
+                : "bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400"
+            }`}>
+            <span className={`w-2 h-2 rounded-full shrink-0 ${
+              isTyping ? "bg-blue-400 animate-pulse" : "bg-green-500"
+            }`} />
+            {isTyping ? (
+              <span className="flex items-center gap-1.5 font-medium">
+                <Brain size={11} className="text-blue-400" />
+                {currentAgentLabel
+                  ? currentAgentLabel.length > 30
+                    ? currentAgentLabel.slice(0, 28) + "…"
+                    : currentAgentLabel
+                  : "Agent Working…"}
+              </span>
+            ) : (
+              <span>Agent Idle</span>
+            )}
             <span className="w-px h-3 bg-gray-300 dark:bg-gray-700 mx-1" />
             <span className="text-blue-500 dark:text-blue-400 font-medium uppercase tracking-wide">
               {project.llm_model || "Mistral"}
@@ -914,6 +975,20 @@ export default function WorkspacePage() {
               <PanelRight size={15} />
             </button>
           </div>
+          <button
+            onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+            title="Toggle Theme"
+            className="p-2 text-gray-500 hover:text-gray-900 dark:hover:text-white transition-colors"
+          >
+            {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
+          </button>
+          <button
+            onClick={() => setIsDashboardOpen(true)}
+            title="Project Dashboard"
+            className="p-2 text-gray-500 hover:text-gray-900 dark:hover:text-white transition-colors"
+          >
+            <BarChart3 size={16} />
+          </button>
           <button
             onClick={() => setIsShortcutsOpen(true)}
             title="Keyboard shortcuts (?)"
@@ -968,6 +1043,13 @@ export default function WorkspacePage() {
                             : "bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-gray-200 rounded-tl-none"
                           }`}
                       >
+                        {msg.images && msg.images.length > 0 && (
+                          <div className="flex flex-wrap gap-2 mb-2">
+                            {msg.images.map((img, idx) => (
+                              <img key={idx} src={img} alt="attached" className="max-w-full h-auto rounded-lg max-h-48 object-contain border border-white/20" />
+                            ))}
+                          </div>
+                        )}
                         <div className="prose prose-sm dark:prose-invert max-w-none space-y-2 break-words">
                           <ReactMarkdown
                             remarkPlugins={[remarkGfm]}
@@ -1006,6 +1088,9 @@ export default function WorkspacePage() {
                             {msg.content}
                           </ReactMarkdown>
                         </div>
+                        {msg.activities && msg.activities.length > 0 && (
+                          <AgentActivityLog activities={msg.activities} />
+                        )}
                         {msg.modifiedFiles && msg.modifiedFiles.length > 0 && (
                           <div className="mt-2 pt-2 border-t border-gray-200 dark:border-gray-700">
                             <p className="text-xs text-green-500 dark:text-green-400 font-medium mb-1 flex items-center gap-1">
@@ -1024,15 +1109,23 @@ export default function WorkspacePage() {
                               </svg>
                               {msg.modifiedFiles.length} file{msg.modifiedFiles.length > 1 ? "s" : ""} written
                             </p>
-                            <div className="flex flex-col gap-0.5">
+                            <div className="flex flex-col gap-0.5 mt-2">
                               {msg.modifiedFiles.map((f) => (
-                                <button
-                                  key={f}
-                                  onClick={() => handleFileClick(f)}
-                                  className="text-left text-xs text-blue-400 hover:text-blue-300 hover:underline truncate font-mono"
-                                >
-                                  📄 {f}
-                                </button>
+                                <div key={f} className="flex items-center justify-between text-xs font-mono group/file">
+                                  <button
+                                    onClick={() => handleFileClick(f)}
+                                    className="text-blue-400 hover:text-blue-300 hover:underline truncate"
+                                  >
+                                    📄 {f}
+                                  </button>
+                                  <button 
+                                    onClick={() => setDiffFile(f)}
+                                    className="opacity-0 group-hover/file:opacity-100 text-gray-500 hover:text-gray-300 transition-opacity ml-2 px-1 rounded hover:bg-gray-700/50"
+                                    title="View Diff"
+                                  >
+                                    Diff
+                                  </button>
+                                </div>
                               ))}
                             </div>
                           </div>
@@ -1071,17 +1164,70 @@ export default function WorkspacePage() {
                   <div ref={chatEndRef} />
                 </div>
                 <div className="p-4 border-t border-gray-200 dark:border-gray-800">
+                  {chatImages.length > 0 && (
+                    <div className="flex gap-2 mb-2 overflow-x-auto pb-1">
+                      {chatImages.map((img, idx) => (
+                        <div key={idx} className="relative shrink-0">
+                          <img src={img} alt="upload preview" className="h-16 w-16 object-cover rounded-lg border border-gray-700" />
+                          <button
+                            onClick={() => setChatImages(prev => prev.filter((_, i) => i !== idx))}
+                            className="absolute -top-1.5 -right-1.5 bg-gray-800 hover:bg-gray-700 text-white rounded-full p-0.5 border border-gray-600 transition-colors"
+                          >
+                            <X size={12} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                   <div className="relative">
                     <textarea
                       value={chatInput}
                       onChange={(e) => setChatInput(e.target.value)}
                       onKeyDown={handleKeyDown}
-                      placeholder="Ask the agent to do something..."
-                      className="w-full bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl pl-4 pr-12 py-3 text-sm resize-none h-20 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                      onPaste={(e) => {
+                        const items = e.clipboardData.items;
+                        for (let i = 0; i < items.length; i++) {
+                          if (items[i].type.indexOf("image") !== -1) {
+                            const blob = items[i].getAsFile();
+                            if (blob) {
+                              const reader = new FileReader();
+                              reader.onload = (ev) => {
+                                if (ev.target?.result) {
+                                  setChatImages(prev => [...prev, ev.target!.result as string]);
+                                }
+                              };
+                              reader.readAsDataURL(blob);
+                            }
+                          }
+                        }
+                      }}
+                      placeholder="Ask the agent to do something... (Paste images)"
+                      className="w-full bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl pl-11 pr-12 py-3 text-sm resize-none h-20 focus:outline-none focus:ring-1 focus:ring-blue-500"
                     />
+                    <label className="absolute left-3 bottom-3 p-1.5 text-gray-400 hover:text-white cursor-pointer transition-colors">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                      <input 
+                        type="file" 
+                        accept="image/*" 
+                        className="hidden" 
+                        multiple
+                        onChange={(e) => {
+                          const files = e.target.files;
+                          if (!files) return;
+                          Array.from(files).forEach(file => {
+                            const reader = new FileReader();
+                            reader.onload = (ev) => {
+                              if (ev.target?.result) setChatImages(prev => [...prev, ev.target!.result as string]);
+                            };
+                            reader.readAsDataURL(file);
+                          });
+                          e.target.value = "";
+                        }}
+                      />
+                    </label>
                     <button
                       onClick={handleSendMessage}
-                      disabled={!chatInput.trim() || isTyping}
+                      disabled={(!chatInput.trim() && chatImages.length === 0) || isTyping}
                       className="absolute right-3 bottom-3 p-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:hover:bg-blue-600 text-white rounded-lg transition-colors"
                     >
                       <Send size={16} />
@@ -1122,63 +1268,87 @@ export default function WorkspacePage() {
                     </div>
                   )}
 
-                  {openTabs.map((path) => (
+                  {openTabs.map((path) => {
+                    const isDirty = dirtyTabs.has(path);
+                    return (
                     <div
                       key={path}
                       onClick={() => {
                         setSelectedFile(path);
                         setEditorLanguage(getLanguageFromPath(path));
+                        // Switch Monaco model
+                        const model = monacoModels.current.get(path);
+                        if (editorRef.current && model) editorRef.current.setModel(model);
                       }}
                       title={path}
-                      className={`flex items-center gap-2 px-4 h-full cursor-pointer border-r border-gray-700 shrink-0 whitespace-nowrap ${selectedFile === path
-                          ? "bg-[#1e1e1e] text-white"
-                          : "bg-[#252526] text-gray-400"
-                        }`}
+                      className={`flex items-center gap-2 px-3 h-full cursor-pointer border-r border-gray-700 shrink-0 whitespace-nowrap group/tab transition-colors ${
+                        selectedFile === path
+                          ? "bg-[#1e1e1e] text-white border-t-2 border-t-blue-500"
+                          : "bg-[#252526] text-gray-400 hover:bg-[#2a2a2a]"
+                      }`}
                     >
-                      <FileCode size={14} className="shrink-0" />
-
-                      <span className="text-sm">
-                        {getTabLabel(path, openTabs)}
-                      </span>
-
+                      <FileCode size={13} className={`shrink-0 ${fileIconColor(path.split("/").pop() || "")}`} />
+                      <span className="text-xs">{getTabLabel(path, openTabs)}</span>
+                      {isDirty && (
+                        <span className="w-1.5 h-1.5 rounded-full bg-yellow-400 shrink-0" title="Unsaved changes" />
+                      )}
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-
                           const tabs = openTabs.filter((t) => t !== path);
-
                           setOpenTabs(tabs);
-
+                          // Dispose the Monaco model for closed tab
+                          const model = monacoModels.current.get(path);
+                          if (model) { model.dispose(); monacoModels.current.delete(path); }
+                          setDirtyTabs((prev) => { const next = new Set(prev); next.delete(path); return next; });
                           if (selectedFile === path) {
                             if (tabs.length > 0) {
-                              setSelectedFile(tabs[tabs.length - 1]);
-                              setEditorLanguage(
-                                getLanguageFromPath(tabs[tabs.length - 1])
-                              );
+                              const nextPath = tabs[tabs.length - 1];
+                              setSelectedFile(nextPath);
+                              setEditorLanguage(getLanguageFromPath(nextPath));
+                              const nextModel = monacoModels.current.get(nextPath);
+                              if (editorRef.current && nextModel) editorRef.current.setModel(nextModel);
                             } else {
                               setSelectedFile(null);
                             }
                           }
                         }}
-                        className="shrink-0 hover:text-white"
+                        className="shrink-0 opacity-50 group-hover/tab:opacity-100 hover:text-white transition-opacity ml-1"
                       >
-                        ✕
+                        <X size={12} />
                       </button>
                     </div>
-                  ))}
+                    );
+                  })}
+                  
+                  {/* Web Preview Tab (fake path) */}
+                  <div
+                      onClick={() => setSelectedFile("__preview__")}
+                      title="Web Preview"
+                      className={`flex items-center gap-2 px-4 h-full cursor-pointer border-r border-gray-700 shrink-0 whitespace-nowrap ${selectedFile === "__preview__"
+                          ? "bg-[#1e1e1e] text-white"
+                          : "bg-[#252526] text-gray-400"
+                        }`}
+                  >
+                    <Play size={14} className="shrink-0 text-green-400" />
+                    <span className="text-sm">Preview</span>
+                  </div>
+
                 </div>
                 <div className="flex-1 relative overflow-hidden">
-                  {selectedFile ? (
+                  {selectedFile === "__preview__" ? (
+                    <PreviewPanel defaultPort={3000} />
+                  ) : selectedFile ? (
                     <Editor
                       height="100%"
                       language={editorLanguage}
                       theme="vs-dark"
                       value={fileContents[selectedFile] || ""}
                       onChange={(value) => {
-                        setFileContents((prev) => ({
-                          ...prev,
-                          [selectedFile]: value || "",
-                        }));
+                        if (!selectedFile) return;
+                        setFileContents((prev) => ({ ...prev, [selectedFile]: value || "" }));
+                        // Mark tab as dirty
+                        setDirtyTabs((prev) => new Set([...prev, selectedFile]));
                       }}
                       options={{
                         minimap: { enabled: false },
@@ -1188,6 +1358,44 @@ export default function WorkspacePage() {
                         scrollBeyondLastLine: false,
                         padding: { top: 16 },
                         fontFamily: "var(--font-mono)",
+                        // smooth cursor animation
+                        cursorSmoothCaretAnimation: "on",
+                        smoothScrolling: true,
+                        // Better tab rendering
+                        renderWhitespace: "selection",
+                      }}
+                      onMount={(editor, monaco) => {
+                        editorRef.current = editor;
+                        monacoRef.current = monaco;
+
+                        // Create initial model for the already-selected file
+                        if (selectedFile && fileContents[selectedFile] !== undefined) {
+                          const uri = monaco.Uri.file(selectedFile);
+                          let model = monaco.editor.getModel(uri);
+                          if (!model) {
+                            model = monaco.editor.createModel(
+                              fileContents[selectedFile],
+                              getLanguageFromPath(selectedFile),
+                              uri
+                            );
+                          }
+                          monacoModels.current.set(selectedFile, model);
+                          editor.setModel(model);
+                        }
+
+                        const sendSelectionToAI = (promptPrefix: string) => {
+                          const selection = editor.getModel()?.getValueInRange(editor.getSelection()!);
+                          if (selection && selection.trim()) {
+                            sendPrompt(`${promptPrefix} from ${selectedFile}:\n\`\`\`\n${selection}\n\`\`\``);
+                            const panel = chatPanelRef.current;
+                            if (panel && panel.isCollapsed()) panel.expand();
+                          }
+                        };
+
+                        editor.addAction({ id: "ai-explain", label: "AI: Explain Code", contextMenuGroupId: "navigation", contextMenuOrder: 1, run: () => sendSelectionToAI("Explain this code") });
+                        editor.addAction({ id: "ai-refactor", label: "AI: Refactor Code", contextMenuGroupId: "navigation", contextMenuOrder: 2, run: () => sendSelectionToAI("Refactor this code to be cleaner and more robust") });
+                        editor.addAction({ id: "ai-fix", label: "AI: Fix Bugs", contextMenuGroupId: "navigation", contextMenuOrder: 3, run: () => sendSelectionToAI("Find and fix any bugs in this code") });
+                        editor.addAction({ id: "ai-open-diff", label: "AI: View Diff", contextMenuGroupId: "navigation", contextMenuOrder: 4, run: () => { if (selectedFile) setDiffFile(selectedFile); } });
                       }}
                       loading={<div className="p-6 text-gray-500">Loading editor...</div>}
                     />
@@ -1276,7 +1484,7 @@ export default function WorkspacePage() {
                           <FolderPlus size={13} />
                         </button>
                         <button
-                          onClick={() => setIsFileFinderOpen(true)}
+                          onClick={() => setIsCommandPaletteOpen(true)}
                           className="p-1 text-gray-400 hover:text-white rounded transition-colors"
                           title="Go to file (Ctrl+P)"
                         >
@@ -1324,6 +1532,7 @@ export default function WorkspacePage() {
                             onCreateFolder={(parentPath) => { setFileInputName(""); setFileActionModal({ type: "create_folder", path: parentPath || "" }); }}
                             onRename={(path, name) => { setFileInputName(name); setFileActionModal({ type: "rename", path, name }); }}
                             onDelete={(path) => setFileActionModal({ type: "delete", path })}
+                            onContextMenu={handleContextMenu}
                           />
                         ))
                       )}
@@ -1425,17 +1634,35 @@ export default function WorkspacePage() {
         </Panel>
       </PanelGroup>
 
-      {/* Fuzzy File Finder overlay (Ctrl+P) */}
-      {isFileFinderOpen && (
-        <FileFinder
-          paths={flattenPaths(fileTree)}
-          onSelect={(path) => {
-            setIsFileFinderOpen(false);
-            handleFileClick(path);
-          }}
-          onClose={() => setIsFileFinderOpen(false)}
-        />
-      )}
+      {/* Command Palette Overlay (Ctrl+Shift+P / Ctrl+P) */}
+      <CommandPalette
+        isOpen={isCommandPaletteOpen}
+        onClose={() => setIsCommandPaletteOpen(false)}
+        paths={flattenPaths(fileTree)}
+        onSelectPath={(path) => handleFileClick(path)}
+        commands={[
+          { id: "toggle-chat", title: "View: Toggle Chat Panel", category: "View", action: () => setIsChatCollapsed((v) => !v) },
+          { id: "toggle-term", title: "View: Toggle Terminal", category: "View", action: () => setIsTerminalCollapsed((v) => !v) },
+          { id: "save-file", title: "File: Save Current", category: "File", action: () => saveCurrentFile() },
+          { id: "dashboard", title: "View: Project Dashboard", category: "View", action: () => setIsDashboardOpen(true) },
+          { id: "onboarding", title: "Setup: Re-run Onboarding", category: "Config", action: () => setIsOnboardingOpen(true) },
+        ]}
+      />
+
+      <ProjectDashboardModal 
+        isOpen={isDashboardOpen} 
+        onClose={() => setIsDashboardOpen(false)} 
+        projectId={projectId} 
+      />
+
+      <OnboardingWizard
+        isOpen={isOnboardingOpen}
+        projectId={projectId}
+        onComplete={(data) => {
+          success(`Project initialized with ${data.language} and ${data.model}`);
+          setIsOnboardingOpen(false);
+        }}
+      />
 
       {/* File Action Modal (New File / New Folder / Rename / Delete) */}
       {fileActionModal.type && (
@@ -1504,8 +1731,95 @@ export default function WorkspacePage() {
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
         project={project}
-        onProjectUpdated={(updated) => setProject(updated)}
+        onSaved={(updated) => setProject(updated)}
       />
+
+      {/* DiffViewer Full-screen Overlay */}
+      {diffFile && (
+        <div className="fixed inset-0 z-[60] bg-black/80 flex items-center justify-center p-8 backdrop-blur-sm">
+          <div className="w-full max-w-6xl h-full max-h-[85vh] rounded-xl overflow-hidden shadow-2xl border border-gray-700/50">
+            <DiffViewer
+              projectId={projectId}
+              filePath={diffFile}
+              onClose={() => setDiffFile(null)}
+              onAccept={(filePath, content) => {
+                // Update the editor model and file contents state
+                setFileContents((prev) => ({ ...prev, [filePath]: content }));
+                const model = monacoModels.current.get(filePath);
+                if (model) model.setValue(content);
+                setDirtyTabs((prev) => { const next = new Set(prev); next.delete(filePath); return next; });
+              }}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Right-click Context Menu */}
+      {contextMenu && (
+        <div
+          className="fixed z-[70] bg-[#1e1e1e] border border-gray-700/80 rounded-xl shadow-2xl py-1.5 min-w-[180px] overflow-hidden"
+          style={{ top: contextMenu.y, left: contextMenu.x }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {contextMenu.node.type === "file" && (
+            <>
+              <button
+                onClick={() => { handleFileClick(contextMenu.node.path); setContextMenu(null); }}
+                className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-gray-300 hover:bg-gray-700/60 transition-colors"
+              >
+                <FileCode size={13} className="text-gray-400" /> Open
+              </button>
+              <button
+                onClick={() => { setDiffFile(contextMenu.node.path); setContextMenu(null); }}
+                className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-gray-300 hover:bg-gray-700/60 transition-colors"
+              >
+                <GitBranch size={13} className="text-yellow-400" /> View Diff
+              </button>
+              <div className="my-1 border-t border-gray-700/60" />
+            </>
+          )}
+          {contextMenu.node.type === "directory" && (
+            <>
+              <button
+                onClick={() => { setFileInputName(""); setFileActionModal({ type: "create_file", path: contextMenu.node.path }); setContextMenu(null); }}
+                className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-gray-300 hover:bg-gray-700/60 transition-colors"
+              >
+                <FilePlus size={13} className="text-blue-400" /> New File Here
+              </button>
+              <button
+                onClick={() => { setFileInputName(""); setFileActionModal({ type: "create_folder", path: contextMenu.node.path }); setContextMenu(null); }}
+                className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-gray-300 hover:bg-gray-700/60 transition-colors"
+              >
+                <FolderPlus size={13} className="text-yellow-400" /> New Folder Here
+              </button>
+              <div className="my-1 border-t border-gray-700/60" />
+            </>
+          )}
+          <button
+            onClick={() => {
+              const path = contextMenu.node.path;
+              navigator.clipboard.writeText(path);
+              setContextMenu(null);
+            }}
+            className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-gray-300 hover:bg-gray-700/60 transition-colors"
+          >
+            <Search size={13} className="text-gray-400" /> Copy Path
+          </button>
+          <button
+            onClick={() => { setFileInputName(contextMenu.node.name); setFileActionModal({ type: "rename", path: contextMenu.node.path, name: contextMenu.node.name }); setContextMenu(null); }}
+            className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-gray-300 hover:bg-gray-700/60 transition-colors"
+          >
+            <Edit3 size={13} className="text-green-400" /> Rename
+          </button>
+          <div className="my-1 border-t border-gray-700/60" />
+          <button
+            onClick={() => { setFileActionModal({ type: "delete", path: contextMenu.node.path }); setContextMenu(null); }}
+            className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-red-400 hover:bg-red-900/20 transition-colors"
+          >
+            <Trash2 size={13} /> Delete
+          </button>
+        </div>
+      )}
     </div>
   );
 }
