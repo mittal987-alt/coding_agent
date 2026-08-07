@@ -12,6 +12,7 @@ from app.repositories.project_repository import ProjectRepository
 from app.schema.project import ProjectCreate, ProjectUpdate, ProjectResponse
 from app.schema.response import ApiResponse
 from app.services.project_service import ProjectService
+from app.services.indexing_service import build_index, search_index
 from app.utils.storage_manager import StorageManager
 
 storage = StorageManager()
@@ -309,6 +310,17 @@ async def upload_folder(
 
     service.save_uploaded_folder(project, entries)
 
+    # Kick off indexing so RAG has embeddings ready for the first chat
+    # message. Best-effort — indexing failure should never block the
+    # upload response, since the upload itself already succeeded.
+    try:
+        repo_path = storage.repository_path(project.id)
+        vectorstore_path = storage.vectorstore_path(project.id)
+        build_index(repo_path, vectorstore_path)
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning("Auto-index after upload failed: %s", e)
+
     return ApiResponse(
         success=True,
         message=f"Uploaded {len(entries)} files successfully.",
@@ -376,6 +388,40 @@ def get_project_file_content(
         return ApiResponse(success=True, message="Success", data={"content": content})
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Could not read file: {e}")
+
+
+# ---------------------------------------------------------------------------
+# Feature 8 — RAG indexing  (build/rebuild the project's vector index)
+# ---------------------------------------------------------------------------
+
+@router.post("/{project_id}/index", response_model=ApiResponse)
+def index_project(
+    project_id: str,
+    service: ProjectService = Depends(get_project_service),
+):
+    """
+    Build (or rebuild) the FAISS vector index for this project's repository,
+    stored under storage.vectorstore_path(project.id). Call this after
+    upload/clone, and re-call periodically as the codebase changes, so the
+    chat endpoint's context-injection has fresh embeddings to search.
+    """
+    project = service.get_project(project_id)
+    if project is None:
+        raise HTTPException(status_code=404, detail="Project not found.")
+
+    repo_path = storage.repository_path(project.id)
+    vectorstore_path = storage.vectorstore_path(project.id)
+
+    if not repo_path.exists():
+        raise HTTPException(status_code=400, detail="No repository to index.")
+
+    count = build_index(repo_path, vectorstore_path)
+
+    return ApiResponse(
+        success=True,
+        message=f"Indexed {count} chunks.",
+        data={"chunks_indexed": count},
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -566,7 +612,6 @@ def replace_in_files(
 
 # ---------------------------------------------------------------------------
 # Git status  (file tree badges)
-
 # ---------------------------------------------------------------------------
 
 @router.get("/{project_id}/git/status", response_model=ApiResponse)
@@ -949,7 +994,7 @@ def _files_mentioned(user_text: str, repo_path: Path) -> list[tuple[str, str]]:
     return found
 
 
-def _build_context_prompt(repo_path: Path, user_message: str) -> str:
+def _build_context_prompt(repo_path: Path, user_message: str, project_id: str) -> str:
     """Assemble a system-level codebase context block."""
     sections: list[str] = []
 
@@ -962,9 +1007,24 @@ def _build_context_prompt(repo_path: Path, user_message: str) -> str:
         sections.append(f"## Recent uncommitted changes (git diff HEAD)\n```diff\n{diff}\n```")
 
     mentioned = _files_mentioned(user_message, repo_path)
+    already_included = {rel for rel, _ in mentioned}
     for rel, content in mentioned:
         ext = rel.rsplit(".", 1)[-1] if "." in rel else ""
         sections.append(f"## File: {rel}\n```{ext}\n{content}\n```")
+
+    # Feature 8: semantic retrieval — finds relevant files even when the
+    # user doesn't name them explicitly, using the FAISS index built via
+    # POST /{project_id}/index. Best-effort: if no index exists yet,
+    # search_index() returns [] and this section is simply skipped.
+    try:
+        vectorstore_path = storage.vectorstore_path(project_id)
+        retrieved = search_index(vectorstore_path, user_message, top_k=5)
+        for chunk_text, source_path in retrieved:
+            if source_path in already_included:
+                continue  # avoid duplicating a file already included in full
+            sections.append(f"## Relevant excerpt: {source_path}\n```\n{chunk_text}\n```")
+    except Exception:
+        pass
 
     if not sections:
         return ""
@@ -1106,7 +1166,7 @@ def project_chat(
     LLM chat endpoint with:
     - Feature 5: Two-phase plan/execute (require_plan / approved_plan)
     - Feature 6: Auto-commit after each AI turn
-    - Feature 8: Codebase context injection
+    - Feature 8: Codebase context injection (+ semantic retrieval)
     """
     project = service.get_project(project_id)
     if project is None:
@@ -1121,7 +1181,7 @@ def project_chat(
         (m["content"] for m in reversed(messages) if m.get("role") == "user"), ""
     )
     if repo_path.exists():
-        ctx = _build_context_prompt(repo_path, user_text)
+        ctx = _build_context_prompt(repo_path, user_text, project_id)
         if ctx:
             messages = [{"role": "system", "content": ctx}] + messages
 
@@ -1200,7 +1260,7 @@ async def project_chat_stream(
         "",
     )
     if repo_path.exists():
-        ctx = _build_context_prompt(repo_path, user_text)
+        ctx = _build_context_prompt(repo_path, user_text, project_id)
         if ctx:
             messages = [{"role": "system", "content": ctx}] + messages
 

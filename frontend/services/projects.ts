@@ -53,17 +53,31 @@ export interface ApiKey {
   provider: string;
   preview: string;
 }
-export interface SearchResult {
-  path: string;
-  line: number;
-  preview: string;
-}
-
 
 export interface EnvVar {
   id: string;
   key: string;
   value: string;
+}
+
+// --- Feature 5/6/7/8 additions ---
+
+export interface GitCommit {
+  hash: string;
+  author: string;
+  email: string;
+  date: string;
+  message: string;
+}
+
+export interface RunResult {
+  run_id: string;
+  command: string;
+  label: string;
+}
+
+export interface IndexResult {
+  chunks_indexed: number;
 }
 
 
@@ -73,6 +87,7 @@ export const ProjectService = {
     const data = response.data?.data;
     return Array.isArray(data) ? data : [];
   },
+
   searchFiles: async (projectId: string, query: string): Promise<SearchResult[]> => {
     const response = await apiClient.get<ApiResponse<SearchResult[]>>(
       `/projects/${projectId}/search`,
@@ -81,12 +96,11 @@ export const ProjectService = {
     return response.data.data || [];
   },
 
-
   getProject: async (id: string | number): Promise<Project> => {
     const response = await apiClient.get<ApiResponse<Project>>(`/projects/${id}`);
     return response.data.data;
   },
-  
+
   createProject: async (project: ProjectCreate): Promise<Project> => {
     const response = await apiClient.post<ApiResponse<Project>>("/projects/", project);
     return response.data.data;
@@ -135,5 +149,36 @@ export const ProjectService = {
 
   deleteApiKey: async (projectId: string, keyId: string): Promise<void> => {
     await apiClient.delete(`/projects/${projectId}/api-keys/${keyId}`);
+  },
+
+  // --- Feature 6: Git history & rollback ---
+  getGitLog: async (projectId: string, n = 20): Promise<GitCommit[]> => {
+    const response = await apiClient.get<ApiResponse<GitCommit[]>>(
+      `/projects/${projectId}/git/log`,
+      { params: { n } }
+    );
+    return response.data.data || [];
+  },
+
+  rollbackCommit: async (projectId: string, commitHash?: string | null): Promise<void> => {
+    await apiClient.post(`/projects/${projectId}/git/rollback`, {
+      commit_hash: commitHash || null,
+    });
+  },
+
+  // --- Feature 8: RAG indexing ---
+  indexProject: async (projectId: string): Promise<IndexResult> => {
+    const response = await apiClient.post<ApiResponse<IndexResult>>(
+      `/projects/${projectId}/index`
+    );
+    return response.data.data;
+  },
+
+  // --- Feature 7: Run/Build/Test ---
+  runProject: async (projectId: string): Promise<RunResult> => {
+    const response = await apiClient.post<ApiResponse<RunResult>>(
+      `/projects/${projectId}/run`
+    );
+    return response.data.data;
   },
 };

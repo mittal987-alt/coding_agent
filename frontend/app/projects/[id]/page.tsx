@@ -2,7 +2,7 @@
 
 import React, { useEffect, useRef, useState, useCallback, useLayoutEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, Loader2, MessageSquare, Terminal, FileCode, Play, Folder, Settings, Send, PanelLeft, PanelRight, PanelBottom, Save, GitBranch, Search, FilePlus, FolderPlus, Trash2, Edit3, Brain, Zap, Circle, X, Sun, Moon, BarChart3, Database, Command } from "lucide-react";
+import { ArrowLeft, Loader2, MessageSquare, Terminal, FileCode, Play, Folder, Settings, Send, PanelLeft, PanelRight, PanelBottom, Save, GitBranch, Search, FilePlus, FolderPlus, Trash2, Edit3, Brain, Zap, Circle, X, Sun, Moon, BarChart3, Database, Command, History as HistoryIcon, RotateCcw } from "lucide-react";
 import { ProjectService, Project } from "@/services/projects";
 import Link from "next/link";
 import ReactMarkdown from "react-markdown";
@@ -30,6 +30,7 @@ import SearchPanel from "@/components/SearchPanel";
 import AgentActivityLog from "@/components/AgentActivityLog";
 import DiffViewer from "@/components/DiffViewer";
 import PreviewPanel from "@/components/PreviewPanel";
+import GitHistoryModal from "@/components/GitHistoryModal";
 const IDETerminal = dynamic(
   () => import("@/components/terminal"),
   {
@@ -344,6 +345,16 @@ export default function WorkspacePage() {
   }>({ type: null, path: "" });
   const [fileInputName, setFileInputName] = useState("");
 
+  // Keyboard shortcuts overlay
+  const [isShortcutsOpen, setIsShortcutsOpen] = useState(false);
+  // Project settings modal overlay
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+
+  // Feature 6/7/8 UI state
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+  const [isIndexing, setIsIndexing] = useState(false);
+  const [isRunning, setIsRunning] = useState(false);
+
   /* ── Close context menu on any outside click ── */
   useEffect(() => {
     if (!contextMenu) return;
@@ -429,11 +440,6 @@ export default function WorkspacePage() {
       setFileActionModal({ type: null, path: "" });
     }
   };
-
-  // Keyboard shortcuts overlay
-  const [isShortcutsOpen, setIsShortcutsOpen] = useState(false);
-  // Project settings modal overlay
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
   const toggleChatPanel = useCallback(() => {
     const panel = chatPanelRef.current;
@@ -530,6 +536,37 @@ export default function WorkspacePage() {
       setIsSavingFile(false);
     }
   }, [selectedFile, fileContents, projectId]);
+
+  // Feature 7: Run the project's detected dev/build/test command
+  const handleRunProject = async () => {
+    setIsRunning(true);
+    try {
+      const result = await ProjectService.runProject(projectId);
+      success(`Detected: ${result.label} — ${result.command}`);
+      // NOTE: /ws/run/{run_id} isn't wired up on the backend yet — once it
+      // exists, connect here to stream live output into a dedicated
+      // terminal tab instead of just showing a toast.
+    } catch (err: any) {
+      console.error("Run failed:", err);
+      error(err?.response?.data?.detail || "Failed to start run.");
+    } finally {
+      setIsRunning(false);
+    }
+  };
+
+  // Feature 8: (Re)build the project's RAG vector index
+  const handleIndexProject = async () => {
+    setIsIndexing(true);
+    try {
+      const result = await ProjectService.indexProject(projectId);
+      success(`Indexed ${result.chunks_indexed} chunks for AI search.`);
+    } catch (err: any) {
+      console.error("Indexing failed:", err);
+      error(err?.response?.data?.detail || "Failed to index project.");
+    } finally {
+      setIsIndexing(false);
+    }
+  };
 
   // Keyboard shortcuts: Ctrl+S save | Ctrl+P file finder | Ctrl+Shift+F search | ? help
   useEffect(() => {
@@ -975,6 +1012,37 @@ export default function WorkspacePage() {
               <PanelRight size={15} />
             </button>
           </div>
+
+          {/* Feature 7: Run project */}
+          <button
+            onClick={handleRunProject}
+            disabled={isRunning}
+            title="Run project"
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-xs font-medium transition-colors disabled:opacity-50"
+          >
+            {isRunning ? <Loader2 size={13} className="animate-spin" /> : <Play size={13} />}
+            Run
+          </button>
+
+          {/* Feature 8: Rebuild AI search index */}
+          <button
+            onClick={handleIndexProject}
+            disabled={isIndexing}
+            title="Rebuild AI search index"
+            className="p-2 text-gray-500 hover:text-gray-900 dark:hover:text-white transition-colors disabled:opacity-50"
+          >
+            {isIndexing ? <Loader2 size={16} className="animate-spin" /> : <Database size={16} />}
+          </button>
+
+          {/* Feature 6: Commit history & rollback */}
+          <button
+            onClick={() => setIsHistoryOpen(true)}
+            title="Commit history & rollback"
+            className="p-2 text-gray-500 hover:text-gray-900 dark:hover:text-white transition-colors"
+          >
+            <HistoryIcon size={16} />
+          </button>
+
           <button
             onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
             title="Toggle Theme"
@@ -1646,6 +1714,9 @@ export default function WorkspacePage() {
           { id: "save-file", title: "File: Save Current", category: "File", action: () => saveCurrentFile() },
           { id: "dashboard", title: "View: Project Dashboard", category: "View", action: () => setIsDashboardOpen(true) },
           { id: "onboarding", title: "Setup: Re-run Onboarding", category: "Config", action: () => setIsOnboardingOpen(true) },
+          { id: "history", title: "Git: View History", category: "Git", action: () => setIsHistoryOpen(true) },
+          { id: "run", title: "Project: Run", category: "Run", action: () => handleRunProject() },
+          { id: "index", title: "AI: Rebuild Search Index", category: "AI", action: () => handleIndexProject() },
         ]}
       />
 
@@ -1732,6 +1803,22 @@ export default function WorkspacePage() {
         onClose={() => setIsSettingsOpen(false)}
         project={project}
         onSaved={(updated) => setProject(updated)}
+      />
+
+      {/* Feature 6: Git commit history & rollback */}
+      <GitHistoryModal
+        isOpen={isHistoryOpen}
+        projectId={projectId}
+        onClose={() => setIsHistoryOpen(false)}
+        onRolledBack={() => {
+          refreshFileTree();
+          setSelectedFile(null);
+          setOpenTabs([]);
+          setFileContents({});
+          monacoModels.current.forEach((m) => m.dispose());
+          monacoModels.current.clear();
+          success("Rolled back successfully.");
+        }}
       />
 
       {/* DiffViewer Full-screen Overlay */}
