@@ -12,7 +12,6 @@ const apiClient = axios.create({
   maxRedirects: 0,
 });
 
-
 // Interceptor for responses to unwrap data if you use a standard structure like { data: ... }
 apiClient.interceptors.response.use(
   (response) => {
@@ -24,5 +23,13 @@ apiClient.interceptors.response.use(
     return Promise.reject(error);
   }
 );
+
+/** REST base URL (without trailing slash) — use for direct fetch() calls */
+export const apiBaseUrl =
+  (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1").replace(/\/$/, "");
+
+/** WebSocket base URL — use for new WebSocket(...) calls */
+export const wsBaseUrl =
+  (process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:8000").replace(/\/$/, "");
 
 export default apiClient;

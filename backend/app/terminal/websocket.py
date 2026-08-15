@@ -19,15 +19,30 @@ async def terminal_socket(
     session = terminal_manager.get(session_id)
 
     if session is None:
-        await websocket.close()
+        # The backend process restarted (e.g. --reload picked up a code
+        # change) since this session_id was created. terminal_manager is an
+        # in-memory dict, so it's wiped on every restart — the frontend may
+        # still be holding a stale session_id from sessionStorage. Tell it
+        # clearly instead of silently closing, so the terminal UI can show
+        # "expired" instead of just looking frozen.
+        try:
+            await websocket.send_text(
+                "\r\n\x1b[31m[Session expired — backend restarted. Click 'Start a new terminal'.]\x1b[0m\r\n"
+            )
+        except Exception:
+            pass
+        await websocket.close(code=4001, reason="session_expired")
         return
 
     async def read_terminal():
         loop = asyncio.get_running_loop()
         try:
             while True:
+                # session.read() blocks the executor thread until data
+                # is available, so this loop idles efficiently.
                 output = await loop.run_in_executor(None, session.read)
                 if output is None:
+                    # Process exited — close the socket and stop reading.
                     break
                 if output:
                     await websocket.send_text(output)

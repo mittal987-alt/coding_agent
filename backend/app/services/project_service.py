@@ -191,3 +191,69 @@ class ProjectService:
         except Exception as e:
             logger.error("Failed to delete project %s: %s", project.id, e)
             raise
+
+    def get_stats(self, project):
+        repo_path = storage.repository_path(str(project.id))
+
+        total_commits = 0
+        lines_changed = 0
+        files_modified = 0
+
+        if repo_path.exists() and (repo_path / ".git").exists():
+            try:
+                # Count commits — fast even on large repos
+                result = subprocess.run(
+                    ["git", "rev-list", "--count", "HEAD"],
+                    cwd=str(repo_path),
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                )
+                if result.returncode == 0:
+                    total_commits = int(result.stdout.strip())
+
+                # Count tracked files — fast
+                result = subprocess.run(
+                    ["git", "ls-files"],
+                    cwd=str(repo_path),
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                )
+                if result.returncode == 0:
+                    files_modified = len(
+                        [line for line in result.stdout.split("\n") if line.strip()]
+                    )
+
+                # Lines changed — limit to last 200 commits to keep this fast
+                result = subprocess.run(
+                    ["git", "log", "--shortstat", "--oneline", "-200"],
+                    cwd=str(repo_path),
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                )
+                if result.returncode == 0:
+                    for line in result.stdout.split("\n"):
+                        if "insertion" in line or "deletion" in line:
+                            nums = re.findall(r"(\d+) (insertion|deletion)", line)
+                            lines_changed += sum(int(n[0]) for n in nums)
+            except subprocess.TimeoutExpired as e:
+                logger.warning("git stats timed out for project %s: %s", project.id, e)
+            except Exception as e:
+                logger.error("Failed to fetch git stats for project %s: %s", project.id, e)
+
+        # Estimate time saved (30 mins per commit)
+        total_mins = total_commits * 30
+        hours = total_mins // 60
+        mins = total_mins % 60
+        time_saved = f"{hours}h {mins}m" if hours > 0 else f"{mins}m"
+
+        return {
+            "linesChanged": lines_changed,
+            "filesModified": files_modified,
+            "testsPassed": 0,
+            "totalCommits": total_commits,
+            "activeAgents": 1,
+            "timeSaved": time_saved,
+        }

@@ -45,3 +45,12 @@ class ProjectResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class ProjectStatsResponse(BaseModel):
+    linesChanged: int
+    filesModified: int
+    testsPassed: int
+    totalCommits: int
+    activeAgents: int
+    timeSaved: str

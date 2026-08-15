@@ -1,5 +1,7 @@
+from app import models
 import json
 import uuid
+import re
 from typing import Dict, List
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
@@ -138,6 +140,34 @@ def update_project(
         success=True,
         message="Project updated successfully.",
         data=ProjectResponse.model_validate(updated),
+    )
+
+
+@router.get(
+    "/{project_id}/stats",
+    response_model=ApiResponse,
+)
+async def get_project_stats(
+    project_id: str,
+    service: ProjectService = Depends(get_project_service),
+):
+    import asyncio
+    project = service.get_project(project_id)
+
+    if project is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Project not found.",
+        )
+
+    # Run the blocking git subprocess calls in a thread so the event loop
+    # is never blocked while git is executing.
+    stats = await asyncio.to_thread(service.get_stats, project)
+
+    return ApiResponse(
+        success=True,
+        message="Project stats fetched successfully.",
+        data=stats,
     )
 
 
@@ -548,6 +578,10 @@ def search_files(
 # Search & Replace across files  (Ctrl+H)
 # ---------------------------------------------------------------------------
 
+from pydantic import BaseModel as _PydanticBase
+import subprocess as _subprocess
+
+
 class _ReplaceBody(_PydanticBase):
     search: str
     replace: str
@@ -922,10 +956,6 @@ def delete_git_branch(
 # Project-scoped chat  (called directly by the workspace page)
 # ---------------------------------------------------------------------------
 
-from pydantic import BaseModel as _PydanticBase
-import subprocess as _subprocess
-
-
 # ── Context helpers ────────────────────────────────────────────────────────
 
 _SKIP_DIRS_CTX = {".git", "node_modules", "__pycache__", ".next", "dist", "build", ".venv", "venv"}
@@ -1064,6 +1094,25 @@ def _auto_commit(repo_path: Path, summary: str) -> None:
         )
     except Exception:
         pass  # never block the response
+
+
+# ── Secret detection ──────────────────────────────────────────────────────
+# Feature: warn when the agent writes something that looks like a real
+# hardcoded credential into a *tracked* (non-.env) file, since secrets
+# should live in the API Keys / env-vars store instead of being committed
+# to git in plaintext. Defined once at module level — not per-request.
+
+_SECRET_PATTERNS = [
+    re.compile(r'sk-[A-Za-z0-9]{20,}'),                          # OpenAI-style
+    re.compile(r'AKIA[0-9A-Z]{16}'),                             # AWS access key
+    re.compile(r'AIza[0-9A-Za-z\-_]{35}'),                       # Google API key
+    re.compile(r'ghp_[A-Za-z0-9]{36}'),                          # GitHub PAT
+    re.compile(r'(?i)(api[_-]?key|secret|token|password)\s*[:=]\s*["\'][A-Za-z0-9_\-\.]{12,}["\']'),
+]
+
+
+def _looks_like_secret(content: str) -> bool:
+    return any(p.search(content) for p in _SECRET_PATTERNS)
 
 
 # ── Plan-mode system prompt ────────────────────────────────────────────────
@@ -1237,8 +1286,10 @@ async def project_chat_stream(
 ):
     """
     Streaming SSE version of project_chat.
-    Emits: {"type": "token"|"activity"|"done"|"error", ...}
-    Also parses '### File:' headers in the LLM response and writes those files to disk.
+    Emits: {"type": "token"|"activity"|"warning"|"done"|"error", ...}
+    Also parses '### File:' headers in the LLM response and writes those
+    files to disk, and flags any written file (outside .env) that looks
+    like it contains a hardcoded secret.
     """
     import os as _os
     import json as _json
@@ -1289,9 +1340,17 @@ async def project_chat_stream(
             m for m in messages if m.get("role") != "system"
         ]
 
-    def _parse_and_write_files(text: str, rpath: Path) -> list[str]:
-        """Parse ### File: headers from LLM response and write files to disk."""
+    def _parse_and_write_files(text: str, rpath: Path) -> tuple[list[str], list[str]]:
+        """
+        Parse ### File: headers from LLM response and write files to disk.
+        Returns (written_files, secret_warnings) — secret_warnings lists any
+        written file (outside .env) whose content looks like it contains a
+        hardcoded secret, so the caller can warn the user instead of
+        silently committing a leaked credential.
+        """
         written: list[str] = []
+        warnings: list[str] = []
+
         parts = _re.split(r'^### File:\s*(.+)$', text, flags=_re.MULTILINE)
         i = 1
         while i < len(parts) - 1:
@@ -1306,10 +1365,14 @@ async def project_chat_stream(
                         target.parent.mkdir(parents=True, exist_ok=True)
                         target.write_text(content, encoding="utf-8")
                         written.append(fname)
+
+                        is_env_file = Path(fname).name.startswith(".env")
+                        if not is_env_file and _looks_like_secret(content):
+                            warnings.append(fname)
                     except Exception:
                         pass
             i += 2
-        return written
+        return written, warnings
 
     async def generate():
         full_response = ""
@@ -1422,16 +1485,19 @@ async def project_chat_stream(
             return
 
         # Parse ### File: headers and write files to disk
-        written = _parse_and_write_files(full_response, repo_path)
+        written, secret_warnings = _parse_and_write_files(full_response, repo_path)
         if not written:
             written = list(seen_files)
+
+        for fname in secret_warnings:
+            yield f"data: {_json.dumps({'type': 'warning', 'message': f'Possible hardcoded secret detected in {fname} — consider moving it to the API Keys / env vars store instead of committing it.'})}\n\n"
 
         # Auto-commit
         if repo_path.exists():
             first_line = full_response.split("\n")[0].strip()
             _auto_commit(repo_path, first_line or "agent turn")
 
-        yield f"data: {_json.dumps({'type': 'done', 'modified_files': written, 'phase': 'execute'})}\n\n"
+        yield f"data: {_json.dumps({'type': 'done', 'modified_files': written, 'phase': 'execute', 'secret_warnings': secret_warnings})}\n\n"
 
     return StreamingResponse(
         generate(), media_type="text/event-stream",

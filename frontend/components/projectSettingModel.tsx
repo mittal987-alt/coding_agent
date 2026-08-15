@@ -67,12 +67,9 @@ export const ProjectSettingsModal: React.FC<ProjectSettingsModalProps> = ({
   useEffect(() => {
     if (tab === "env" && isOpen) {
       setIsLoadingEnv(true);
-      fetch(`http://localhost:8000/api/v1/projects/${project.id}/env-vars`)
-        .then((r) => r.json())
-        .then((json) => {
-          if (json.success && Array.isArray(json.data)) {
-            setEnvVars(json.data.map((e: any) => ({ key: e.key, value: e.value })));
-          }
+      ProjectService.getEnvVars(project.id)
+        .then((vars) => {
+          setEnvVars(vars.map((e) => ({ key: e.key, value: e.value })));
         })
         .catch(() => {})
         .finally(() => setIsLoadingEnv(false));
@@ -113,15 +110,7 @@ export const ProjectSettingsModal: React.FC<ProjectSettingsModalProps> = ({
     setIsSaving(true);
     setError(null);
     try {
-      const dict: Record<string, string> = {};
-      for (const v of envVars) {
-        if (v.key.trim()) dict[v.key.trim()] = v.value;
-      }
-      await fetch(`http://localhost:8000/api/v1/projects/${project.id}/env-vars`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(dict),
-      });
+      await ProjectService.saveEnvVars(project.id, envVars as any);
       setSuccess("Environment variables saved!");
       setTimeout(() => setSuccess(null), 3000);
     } catch {

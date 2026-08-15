@@ -17,7 +17,7 @@ def get_model() -> SentenceTransformer:
         _model = SentenceTransformer("all-MiniLM-L6-v2")
     return _model
 
-SKIP_DIRS = {".git", "node_modules", "__pycache__", ".venv", "venv", ".next"}
+SKIP_DIRS = {".git", "node_modules", "__pycache__", ".venv", "venv", ".next", "dist", "build"}
 TEXT_EXTS = {
     ".py", ".js", ".jsx", ".ts", ".tsx", ".json", ".md", ".css", ".html",
     ".yml", ".yaml", ".toml", ".txt",
@@ -85,7 +85,7 @@ def build_index(repo_path: Path, vectorstore_path: Path) -> int:
 def search_index(vectorstore_path: Path, query: str, top_k: int = 5) -> List[Tuple[str, str]]:
     """
     Returns top_k (chunk_text, source_path) tuples most relevant to query.
-    Returns [] if no index exists yet.
+    Returns [] if no index exists yet, or on any read/search failure.
     """
     index_file = vectorstore_path / "index.faiss"
     chunks_file = vectorstore_path / "chunks.pkl"
@@ -108,6 +108,10 @@ def search_index(vectorstore_path: Path, query: str, top_k: int = 5) -> List[Tup
     if k == 0:
         return []
 
-    distances, idxs = index.search(query_vec, k)
-    results = [all_chunks[i] for i in idxs[0] if i < len(all_chunks)]
-    return results
+    try:
+        distances, idxs = index.search(query_vec, k)
+        results = [all_chunks[i] for i in idxs[0] if 0 <= i < len(all_chunks)]
+        return results
+    except Exception as e:
+        logger.warning("Vector search failed: %s", e)
+        return []

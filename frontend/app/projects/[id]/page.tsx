@@ -4,6 +4,7 @@ import React, { useEffect, useRef, useState, useCallback, useLayoutEffect } from
 import { useParams, useRouter } from "next/navigation";
 import { ArrowLeft, Loader2, MessageSquare, Terminal, FileCode, Play, Folder, Settings, Send, PanelLeft, PanelRight, PanelBottom, Save, GitBranch, Search, FilePlus, FolderPlus, Trash2, Edit3, Brain, Zap, Circle, X, Sun, Moon, BarChart3, Database, Command, History as HistoryIcon, RotateCcw } from "lucide-react";
 import { ProjectService, Project } from "@/services/projects";
+import { apiBaseUrl } from "@/lib/api";
 import Link from "next/link";
 import ReactMarkdown from "react-markdown";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
@@ -11,6 +12,7 @@ import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";
 import remarkGfm from "remark-gfm";
 import Editor, { useMonaco } from "@monaco-editor/react";
 import type * as Monaco from "monaco-editor";
+import { useDropzone } from "react-dropzone";
 import dynamic from "next/dynamic";
 import { useToast } from "@/components/ToastProvider";
 import OnboardingWizard from "@/components/OnboardingWizard";
@@ -30,7 +32,7 @@ import SearchPanel from "@/components/SearchPanel";
 import AgentActivityLog from "@/components/AgentActivityLog";
 import DiffViewer from "@/components/DiffViewer";
 import PreviewPanel from "@/components/PreviewPanel";
-import GitHistoryModal from "@/components/GitHistoryModal";
+import {GitHistoryModal }from "@/components/GitHistoryModal";
 const IDETerminal = dynamic(
   () => import("@/components/terminal"),
   {
@@ -201,18 +203,18 @@ function FileNodeItem({
         >
           <button
             onClick={() => setIsOpen(!isOpen)}
-            className="flex items-center gap-1.5 flex-1 min-w-0 text-left py-1 px-1.5 text-gray-300 text-xs truncate"
+            className="flex items-center gap-1.5 flex-1 min-w-0 text-left py-1 px-1.5 text-text-primary text-xs truncate"
             style={{ paddingLeft: `${8 + depth * 12}px` }}
           >
-            <span className={`transition-transform text-gray-500 text-[9px] shrink-0 ${isOpen ? "rotate-90" : ""}`}>▶</span>
+            <span className={`transition-transform text-text-muted text-[9px] shrink-0 ${isOpen ? "rotate-90" : ""}`}>▶</span>
             <Folder size={13} className="text-yellow-400 shrink-0" />
-            <span className="truncate text-gray-200 font-normal">{node.name}</span>
+            <span className="truncate font-normal">{node.name}</span>
           </button>
           <div className="opacity-0 group-hover/row:opacity-100 flex items-center gap-0.5 shrink-0 transition-opacity">
-            <button onClick={(e) => { e.stopPropagation(); onCreateFile(node.path); }} title="New File" className="p-1 text-gray-400 hover:text-white hover:bg-gray-700/60 rounded transition-colors"><FilePlus size={12} /></button>
-            <button onClick={(e) => { e.stopPropagation(); onCreateFolder(node.path); }} title="New Folder" className="p-1 text-gray-400 hover:text-white hover:bg-gray-700/60 rounded transition-colors"><FolderPlus size={12} /></button>
-            <button onClick={(e) => { e.stopPropagation(); onRename(node.path, node.name); }} title="Rename" className="p-1 text-gray-400 hover:text-white hover:bg-gray-700/60 rounded transition-colors"><Edit3 size={12} /></button>
-            <button onClick={(e) => { e.stopPropagation(); onDelete(node.path); }} title="Delete" className="p-1 text-gray-400 hover:text-red-400 hover:bg-gray-700/60 rounded transition-colors"><Trash2 size={12} /></button>
+            <button onClick={(e) => { e.stopPropagation(); onCreateFile(node.path); }} title="New File" className="p-1 text-text-muted hover:text-text-primary hover:bg-surface-hover rounded transition-colors"><FilePlus size={12} /></button>
+            <button onClick={(e) => { e.stopPropagation(); onCreateFolder(node.path); }} title="New Folder" className="p-1 text-text-muted hover:text-text-primary hover:bg-surface-hover rounded transition-colors"><FolderPlus size={12} /></button>
+            <button onClick={(e) => { e.stopPropagation(); onRename(node.path, node.name); }} title="Rename" className="p-1 text-text-muted hover:text-text-primary hover:bg-surface-hover rounded transition-colors"><Edit3 size={12} /></button>
+            <button onClick={(e) => { e.stopPropagation(); onDelete(node.path); }} title="Delete" className="p-1 text-text-muted hover:text-red-500 hover:bg-surface-hover rounded transition-colors"><Trash2 size={12} /></button>
           </div>
         </div>
         {isOpen && node.children && (
@@ -242,7 +244,7 @@ function FileNodeItem({
   return (
     <div
       className={`flex items-center justify-between w-full py-1 px-1.5 rounded-sm text-xs group/row transition-colors ${
-        isSelected ? "bg-blue-600/25 text-blue-300 font-medium" : "hover:bg-gray-800/50 text-gray-400"
+        isSelected ? "bg-accent/20 text-accent font-medium" : "hover:bg-surface-hover text-text-secondary"
       }`}
       style={{ paddingLeft: `${8 + depth * 12}px` }}
       onContextMenu={(e) => onContextMenu(e, node)}
@@ -260,8 +262,8 @@ function FileNodeItem({
         )}
       </button>
       <div className="opacity-0 group-hover/row:opacity-100 flex items-center gap-0.5 shrink-0 transition-opacity">
-        <button onClick={(e) => { e.stopPropagation(); onRename(node.path, node.name); }} title="Rename" className="p-1 text-gray-400 hover:text-white hover:bg-gray-700/60 rounded transition-colors"><Edit3 size={12} /></button>
-        <button onClick={(e) => { e.stopPropagation(); onDelete(node.path); }} title="Delete" className="p-1 text-gray-400 hover:text-red-400 hover:bg-gray-700/60 rounded transition-colors"><Trash2 size={12} /></button>
+        <button onClick={(e) => { e.stopPropagation(); onRename(node.path, node.name); }} title="Rename" className="p-1 text-text-muted hover:text-text-primary hover:bg-surface-hover rounded transition-colors"><Edit3 size={12} /></button>
+        <button onClick={(e) => { e.stopPropagation(); onDelete(node.path); }} title="Delete" className="p-1 text-text-muted hover:text-red-500 hover:bg-surface-hover rounded transition-colors"><Trash2 size={12} /></button>
       </div>
     </div>
   );
@@ -287,6 +289,15 @@ export default function WorkspacePage() {
   const { success, error, info } = useToast();
 
   const [theme, setTheme] = useState<"dark" | "light">("dark");
+
+  useEffect(() => {
+    if (theme === "dark") {
+      document.documentElement.classList.add("dark");
+    } else {
+      document.documentElement.classList.remove("dark");
+    }
+  }, [theme]);
+
   const [isOnboardingOpen, setIsOnboardingOpen] = useState(false);
   const [isDashboardOpen, setIsDashboardOpen] = useState(false);
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
@@ -314,6 +325,9 @@ export default function WorkspacePage() {
 
   const [terminals, setTerminals] = useState<TerminalSession[]>([]);
   const [activeTerminalId, setActiveTerminalId] = useState<string | null>(null);
+  const [isTerminalMaximized, setIsTerminalMaximized] = useState(false);
+  // Map from terminal tab id → a function the IDETerminal component exposes to clear its output
+  const terminalClearFns = useRef<Map<string, () => void>>(new Map());
 
   // Monaco editor instance and per-file model registry
   const monacoRef = useRef<typeof Monaco | null>(null);
@@ -337,6 +351,13 @@ export default function WorkspacePage() {
   // Right panel tab: "files" | "git" | "search"
   const [rightTab, setRightTab] = useState<"files" | "git" | "search">("files");
 
+  // Inline AI Edit State
+  const [isInlineEditOpen, setIsInlineEditOpen] = useState(false);
+  const [inlineEditPosition, setInlineEditPosition] = useState({ top: 0, left: 0 });
+  const [inlineEditPrompt, setInlineEditPrompt] = useState("");
+  const [inlineEditSelection, setInlineEditSelection] = useState<Monaco.Selection | null>(null);
+  const [isInlineEditing, setIsInlineEditing] = useState(false);
+
   // File action modal state (New File / New Folder / Rename / Delete)
   const [fileActionModal, setFileActionModal] = useState<{
     type: "create_file" | "create_folder" | "rename" | "delete" | null;
@@ -344,6 +365,62 @@ export default function WorkspacePage() {
     name?: string;
   }>({ type: null, path: "" });
   const [fileInputName, setFileInputName] = useState("");
+
+  const [isUploading, setIsUploading] = useState(false);
+
+  const refreshFileTree = useCallback(async () => {
+    try {
+      const res = await fetch(`${apiBaseUrl}/projects/${projectId}/files`);
+      const json = await res.json();
+      if (json.success) {
+        setFileTree(json.data || []);
+      }
+    } catch (err) {
+      console.error("Failed to refresh file tree", err);
+    }
+  }, [projectId]);
+
+  const onDrop = useCallback(async (acceptedFiles: File[]) => {
+    if (acceptedFiles.length === 0) return;
+    setIsUploading(true);
+    
+    // Create FormData with multiple files and their relative paths
+    const formData = new FormData();
+    const relativePaths: string[] = [];
+    
+    acceptedFiles.forEach((file: any) => {
+      formData.append("files", file);
+      // use path from react-dropzone if available, fallback to filename
+      const relPath = file.path ? file.path.replace(/^\//, "") : file.name;
+      relativePaths.push(relPath);
+    });
+    formData.append("paths", JSON.stringify(relativePaths));
+
+    try {
+      const res = await fetch(`${apiBaseUrl}/projects/${projectId}/upload-folder`, {
+        method: "POST",
+        body: formData,
+      });
+      const json = await res.json();
+      if (json.success) {
+        success(`Successfully uploaded ${acceptedFiles.length} file(s)`);
+        refreshFileTree();
+      } else {
+        error(json.message || "Failed to upload files");
+      }
+    } catch (err) {
+      console.error("Upload error", err);
+      error("Failed to upload files. Server error.");
+    } finally {
+      setIsUploading(false);
+    }
+  }, [projectId, refreshFileTree]);
+
+  const { getRootProps, getInputProps, isDragActive } = useDropzone({
+    onDrop,
+    noClick: true,
+    noKeyboard: true,
+  });
 
   // Keyboard shortcuts overlay
   const [isShortcutsOpen, setIsShortcutsOpen] = useState(false);
@@ -382,7 +459,7 @@ export default function WorkspacePage() {
     if (fileActionModal.type === "delete") {
       try {
         await fetch(
-          `http://localhost:8000/api/v1/projects/${projectId}/files/delete?path=${encodeURIComponent(fileActionModal.path)}`,
+          `${apiBaseUrl}/projects/${projectId}/files/delete?path=${encodeURIComponent(fileActionModal.path)}`,
           { method: "DELETE" }
         );
         setOpenTabs((prev) => prev.filter((p) => p !== fileActionModal.path));
@@ -404,7 +481,7 @@ export default function WorkspacePage() {
       const parentDir = parts.join("/");
       const newPath = parentDir ? `${parentDir}/${fileInputName.trim()}` : fileInputName.trim();
       try {
-        await fetch(`http://localhost:8000/api/v1/projects/${projectId}/files/rename`, {
+        await fetch(`${apiBaseUrl}/projects/${projectId}/files/rename`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ old_path: fileActionModal.path, new_path: newPath }),
@@ -427,7 +504,7 @@ export default function WorkspacePage() {
       : fileInputName.trim();
 
     try {
-      await fetch(`http://localhost:8000/api/v1/projects/${projectId}/files/create`, {
+      await fetch(`${apiBaseUrl}/projects/${projectId}/files/create`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ path: targetRel, is_directory: isDir }),
@@ -444,21 +521,21 @@ export default function WorkspacePage() {
   const toggleChatPanel = useCallback(() => {
     const panel = chatPanelRef.current;
     if (!panel) return;
-    if (panel.isCollapsed()) panel.expand();
+    if (panel.getSize() === 0 || panel.isCollapsed()) panel.expand();
     else panel.collapse();
   }, []);
 
   const toggleRepoPanel = useCallback(() => {
     const panel = repoPanelRef.current;
     if (!panel) return;
-    if (panel.isCollapsed()) panel.expand();
+    if (panel.getSize() === 0 || panel.isCollapsed()) panel.expand();
     else panel.collapse();
   }, []);
 
   const toggleTerminalPanel = useCallback(() => {
     const panel = terminalPanelRef.current;
     if (!panel) return;
-    if (panel.isCollapsed()) panel.expand();
+    if (panel.getSize() === 0 || panel.isCollapsed()) panel.expand();
     else panel.collapse();
   }, []);
 
@@ -519,7 +596,7 @@ export default function WorkspacePage() {
     setIsSavingFile(true);
     try {
       await fetch(
-        `http://localhost:8000/api/v1/projects/${projectId}/files/content?path=${encodeURIComponent(selectedFile)}`,
+        `${apiBaseUrl}/projects/${projectId}/files/content?path=${encodeURIComponent(selectedFile)}`,
         {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
@@ -537,15 +614,37 @@ export default function WorkspacePage() {
     }
   }, [selectedFile, fileContents, projectId]);
 
-  // Feature 7: Run the project's detected dev/build/test command
+  // Feature 7: Run the project's detected dev/build/test command.
+  // The backend spawns a PTY session with the command already injected,
+  // then we open a new terminal tab pointing at that session so the user
+  // sees live streaming output — no separate WebSocket wiring required.
   const handleRunProject = async () => {
     setIsRunning(true);
     try {
       const result = await ProjectService.runProject(projectId);
-      success(`Detected: ${result.label} — ${result.command}`);
-      // NOTE: /ws/run/{run_id} isn't wired up on the backend yet — once it
-      // exists, connect here to stream live output into a dedicated
-      // terminal tab instead of just showing a toast.
+
+      // Open/expand the terminal panel so output is immediately visible
+      const panel = terminalPanelRef.current;
+      if (panel?.isCollapsed()) panel.expand();
+
+      // Register the new session as a named terminal tab
+      const storageKey = `terminal-sessions-${projectId}`;
+      try {
+        const existing: string[] = JSON.parse(sessionStorage.getItem(storageKey) || "[]");
+        sessionStorage.setItem(storageKey, JSON.stringify([...existing, result.run_id]));
+      } catch { /* ignore */ }
+
+      setTerminals((prev) => {
+        const newTerminal: TerminalSession = {
+          id: `run-${Date.now()}`,
+          sessionId: result.run_id,
+          label: `▶ ${result.label}`,
+        };
+        setActiveTerminalId(newTerminal.id);
+        return [...prev, newTerminal];
+      });
+
+      success(`Running: ${result.command}`);
     } catch (err: any) {
       console.error("Run failed:", err);
       error(err?.response?.data?.detail || "Failed to start run.");
@@ -601,6 +700,13 @@ export default function WorkspacePage() {
         e.preventDefault();
         toggleTerminalPanel();
       }
+      // Ctrl+Shift+` → new terminal
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === "`") {
+        e.preventDefault();
+        const panel = terminalPanelRef.current;
+        if (panel?.isCollapsed()) panel.expand();
+        createTerminal();
+      }
       if (e.key === "?" && !isEditing) {
         setIsShortcutsOpen((prev) => !prev);
       }
@@ -616,18 +722,18 @@ export default function WorkspacePage() {
   const createTerminal = async () => {
     try {
       const res = await fetch(
-        `http://localhost:8000/api/v1/terminal/projects/${projectId}`,
-        {
-          method: "POST",
-        }
+        `${apiBaseUrl}/terminal/projects/${projectId}`,
+        { method: "POST" }
       );
 
-      if (!res.ok) {
-        throw new Error(`HTTP ${res.status}`);
-      }
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
       const json = await res.json();
       const sessionId: string = json.session_id;
+
+      // Auto-expand the terminal panel when the first terminal is opened
+      const panel = terminalPanelRef.current;
+      if (panel?.isCollapsed()) panel.expand();
 
       // Persist session ids in sessionStorage so they survive hot-reloads
       const storageKey = `terminal-sessions-${projectId}`;
@@ -647,10 +753,42 @@ export default function WorkspacePage() {
       });
     } catch (err) {
       console.error("Failed to create terminal", err);
+      error("Failed to start terminal. Is the backend running?");
+    }
+  };
+
+  const replaceTerminalSession = async (oldId: string) => {
+    try {
+      const res = await fetch(
+        `${apiBaseUrl}/terminal/projects/${projectId}`,
+        { method: "POST" }
+      );
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const json = await res.json();
+      const newSessionId: string = json.session_id;
+
+      // Remove the clear fn for the old tab since its xterm instance will remount
+      terminalClearFns.current.delete(oldId);
+
+      setTerminals((prev) =>
+        prev.map((t) => (t.id === oldId ? { ...t, sessionId: newSessionId } : t))
+      );
+
+      const storageKey = `terminal-sessions-${projectId}`;
+      try {
+        const updatedIds = terminals.map((t) =>
+          t.id === oldId ? newSessionId : t.sessionId
+        );
+        sessionStorage.setItem(storageKey, JSON.stringify(updatedIds));
+      } catch { /* ignore */ }
+    } catch (err) {
+      console.error("Failed to replace expired terminal session", err);
+      error("Failed to start a new terminal. Is the backend running?");
     }
   };
 
   const closeTerminal = (id: string) => {
+    terminalClearFns.current.delete(id);
     setTerminals((prev) => {
       const remaining = prev.filter((t) => t.id !== id);
       if (activeTerminalId === id) {
@@ -658,6 +796,12 @@ export default function WorkspacePage() {
       }
       return remaining;
     });
+  };
+
+  const clearActiveTerminal = () => {
+    if (!activeTerminalId) return;
+    const clearFn = terminalClearFns.current.get(activeTerminalId);
+    if (clearFn) clearFn();
   };
 
   const sendPrompt = async (text: string) => {
@@ -686,7 +830,7 @@ export default function WorkspacePage() {
       const historyToSend = messages.map((msg) => ({ role: msg.role, content: msg.content, images: msg.images }));
       historyToSend.push({ role: "user", content: userContent, images: chatImages.length > 0 ? chatImages : undefined });
 
-      const res = await fetch(`http://localhost:8000/api/v1/projects/${projectId}/chat/stream`, {
+      const res = await fetch(`${apiBaseUrl}/projects/${projectId}/chat/stream`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -799,7 +943,7 @@ export default function WorkspacePage() {
 
     try {
       const res = await fetch(
-        `http://localhost:8000/api/v1/projects/${projectId}/files/content?path=${encodeURIComponent(path)}`
+        `${apiBaseUrl}/projects/${projectId}/files/content?path=${encodeURIComponent(path)}`
       );
       const json = await res.json();
       const content =
@@ -831,16 +975,7 @@ export default function WorkspacePage() {
     }
   };
 
-  const refreshFileTree = () => {
-    setIsLoadingFiles(true);
-    fetch(`http://localhost:8000/api/v1/projects/${projectId}/files`)
-      .then((r) => r.json())
-      .then((json) => {
-        if (json.success) setFileTree(json.data || []);
-      })
-      .catch(() => {})
-      .finally(() => setIsLoadingFiles(false));
-  };
+ 
 
   useEffect(() => {
     const fetchProject = async () => {
@@ -857,7 +992,7 @@ export default function WorkspacePage() {
     const fetchFileTree = async () => {
       setIsLoadingFiles(true);
       try {
-        const res = await fetch(`http://localhost:8000/api/v1/projects/${projectId}/files`);
+        const res = await fetch(`${apiBaseUrl}/projects/${projectId}/files`);
         const json = await res.json();
         if (json.success) {
           setFileTree(json.data || []);
@@ -894,7 +1029,7 @@ export default function WorkspacePage() {
 
       // Poll git status every 8 s to keep file badge indicators fresh
       const gitPoll = setInterval(() => {
-        fetch(`http://localhost:8000/api/v1/projects/${projectId}/git/status`)
+        fetch(`${apiBaseUrl}/projects/${projectId}/git/status`)
           .then((r) => r.json())
           .then((json) => {
             if (json.success && json.data) {
@@ -931,7 +1066,30 @@ export default function WorkspacePage() {
   }
 
   return (
-    <div className="h-screen flex flex-col bg-gray-50 dark:bg-[#0e0e0e] text-gray-900 dark:text-gray-200 overflow-hidden font-sans">
+    <div {...getRootProps()} className="h-screen flex flex-col bg-background text-foreground overflow-hidden font-sans relative">
+      <input {...getInputProps()} />
+      {/* Drag & Drop Overlay */}
+      {isDragActive && (
+        <div className="absolute inset-0 z-50 bg-blue-500/20 backdrop-blur-[2px] flex items-center justify-center border-4 border-blue-500 border-dashed m-2 rounded-xl transition-all">
+          <div className="bg-gray-900 text-white px-6 py-4 rounded-xl shadow-2xl flex flex-col items-center gap-3 animate-in fade-in zoom-in duration-200">
+            <div className="p-3 bg-blue-600 rounded-full">
+              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></svg>
+            </div>
+            <div className="text-center">
+              <h3 className="font-bold text-lg">Drop files to upload</h3>
+              <p className="text-sm text-gray-400 mt-1">Files and folders will be added to the project workspace</p>
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {isUploading && (
+        <div className="absolute top-16 right-4 z-50 bg-gray-900 border border-gray-700 shadow-xl rounded-lg px-4 py-3 flex items-center gap-3 animate-in slide-in-from-right-8">
+          <Loader2 size={16} className="animate-spin text-blue-400" />
+          <span className="text-sm font-medium text-white">Uploading files...</span>
+        </div>
+      )}
+
       <style jsx global>{`
         .no-scrollbar::-webkit-scrollbar {
           display: none;
@@ -939,7 +1097,7 @@ export default function WorkspacePage() {
       `}</style>
 
       {/* Top Navbar */}
-      <header className="h-14 border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-[#151515] flex items-center justify-between px-4 shrink-0">
+      <header className="h-14 border-b border-border-subtle bg-surface-1 flex items-center justify-between px-4 shrink-0">
         <div className="flex items-center gap-4">
           <Link href="/projects" className="text-gray-500 hover:text-gray-900 dark:hover:text-white transition-colors">
             <ArrowLeft size={18} />
@@ -1089,7 +1247,7 @@ export default function WorkspacePage() {
               onExpand={() => setIsChatCollapsed(false)}
             >
               {/* Left Panel: Chat Interface */}
-              <aside className="h-full border-r border-gray-200 dark:border-gray-800 bg-white dark:bg-[#151515] flex flex-col">
+              <aside className="h-full border-r border-border-subtle bg-surface-1 flex flex-col">
                 <div className="h-12 border-b border-gray-200 dark:border-gray-800 flex items-center px-4">
                   <h2 className="text-sm font-semibold flex items-center gap-2">
                     <MessageSquare size={16} />
@@ -1320,7 +1478,7 @@ export default function WorkspacePage() {
                       onClick={saveCurrentFile}
                       disabled={isSavingFile}
                       title="Save file (Ctrl+S)"
-                      className="shrink-0 flex items-center gap-1.5 px-3 h-full text-xs border-r border-gray-700 text-gray-400 hover:text-white transition-colors disabled:opacity-50"
+                      className="shrink-0 flex items-center gap-1.5 px-3 h-full text-xs border-r border-border-subtle text-text-muted hover:text-text-primary transition-colors disabled:opacity-50"
                     >
                       {isSavingFile ? (
                         <Loader2 size={13} className="animate-spin" />
@@ -1349,10 +1507,10 @@ export default function WorkspacePage() {
                         if (editorRef.current && model) editorRef.current.setModel(model);
                       }}
                       title={path}
-                      className={`flex items-center gap-2 px-3 h-full cursor-pointer border-r border-gray-700 shrink-0 whitespace-nowrap group/tab transition-colors ${
+                      className={`flex items-center gap-2 px-3 h-full cursor-pointer border-r border-border-subtle shrink-0 whitespace-nowrap group/tab transition-colors ${
                         selectedFile === path
-                          ? "bg-[#1e1e1e] text-white border-t-2 border-t-blue-500"
-                          : "bg-[#252526] text-gray-400 hover:bg-[#2a2a2a]"
+                          ? "bg-surface-2 text-text-primary border-t-2 border-t-accent"
+                          : "bg-surface-1 text-text-secondary hover:bg-surface-hover"
                       }`}
                     >
                       <FileCode size={13} className={`shrink-0 ${fileIconColor(path.split("/").pop() || "")}`} />
@@ -1393,9 +1551,9 @@ export default function WorkspacePage() {
                   <div
                       onClick={() => setSelectedFile("__preview__")}
                       title="Web Preview"
-                      className={`flex items-center gap-2 px-4 h-full cursor-pointer border-r border-gray-700 shrink-0 whitespace-nowrap ${selectedFile === "__preview__"
-                          ? "bg-[#1e1e1e] text-white"
-                          : "bg-[#252526] text-gray-400"
+                      className={`flex items-center gap-2 px-4 h-full cursor-pointer border-r border-border-subtle shrink-0 whitespace-nowrap ${selectedFile === "__preview__"
+                          ? "bg-surface-2 text-text-primary"
+                          : "bg-surface-1 text-text-secondary"
                         }`}
                   >
                     <Play size={14} className="shrink-0 text-green-400" />
@@ -1493,15 +1651,15 @@ export default function WorkspacePage() {
               onExpand={() => setIsRepoCollapsed(false)}
             >
               {/* Right Panel: File Explorer + Git */}
-              <aside className="h-full border-l border-gray-200 dark:border-gray-800 bg-white dark:bg-[#151515] flex flex-col">
+              <aside className="h-full border-l border-border-subtle bg-surface-1 flex flex-col">
                 {/* Tab bar */}
                 <div className="h-10 border-b border-gray-200 dark:border-gray-800 flex items-center shrink-0">
                   <button
                     onClick={() => setRightTab("files")}
-                    className={`flex items-center gap-1.5 px-3 h-full text-xs border-r border-gray-700 transition-colors ${
+                    className={`flex items-center gap-1.5 px-3 h-full text-xs border-r border-border-subtle transition-colors ${
                       rightTab === "files"
-                        ? "text-white bg-[#1e1e1e]"
-                        : "text-gray-400 hover:text-gray-200 hover:bg-gray-800/30"
+                        ? "text-text-primary bg-surface-2"
+                        : "text-text-secondary hover:text-text-primary hover:bg-surface-hover"
                     }`}
                   >
                     <Folder size={12} />
@@ -1510,10 +1668,10 @@ export default function WorkspacePage() {
                   <button
                     onClick={() => setRightTab("search")}
                     title="Search across files (Ctrl+Shift+F)"
-                    className={`flex items-center gap-1.5 px-3 h-full text-xs border-r border-gray-700 transition-colors ${
+                    className={`flex items-center gap-1.5 px-3 h-full text-xs border-r border-border-subtle transition-colors ${
                       rightTab === "search"
-                        ? "text-white bg-[#1e1e1e]"
-                        : "text-gray-400 hover:text-gray-200 hover:bg-gray-800/30"
+                        ? "text-text-primary bg-surface-2"
+                        : "text-text-secondary hover:text-text-primary hover:bg-surface-hover"
                     }`}
                   >
                     <Search size={12} />
@@ -1523,8 +1681,8 @@ export default function WorkspacePage() {
                     onClick={() => setRightTab("git")}
                     className={`flex items-center gap-1.5 px-3 h-full text-xs transition-colors ${
                       rightTab === "git"
-                        ? "text-white bg-[#1e1e1e]"
-                        : "text-gray-400 hover:text-gray-200 hover:bg-gray-800/30"
+                        ? "text-text-primary bg-surface-2"
+                        : "text-text-secondary hover:text-text-primary hover:bg-surface-hover"
                     }`}
                   >
                     <GitBranch size={12} />
@@ -1627,57 +1785,118 @@ export default function WorkspacePage() {
 
         <Panel
           ref={terminalPanelRef}
-          defaultSize={25}
+          defaultSize={isTerminalMaximized ? 80 : 25}
           minSize={10}
-          maxSize={60}
+          maxSize={isTerminalMaximized ? 85 : 60}
           collapsible
           collapsedSize={0}
           onCollapse={() => setIsTerminalCollapsed(true)}
           onExpand={() => setIsTerminalCollapsed(false)}
         >
           {/* Bottom Panel: Terminal/Logs */}
-          <footer className="h-full border-t border-gray-200 dark:border-gray-800 bg-white dark:bg-[#111111] flex flex-col">
-            <div className="h-10 border-b border-gray-200 dark:border-gray-800 flex items-center px-2 gap-1 overflow-x-auto no-scrollbar">
-              {terminals.map((t) => (
-                <div
-                  key={t.id}
-                  onClick={() => setActiveTerminalId(t.id)}
-                  className={`flex items-center gap-2 px-3 py-1.5 rounded-md cursor-pointer text-xs shrink-0 whitespace-nowrap ${activeTerminalId === t.id
-                      ? "bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-white"
-                      : "text-gray-500 hover:text-gray-800 dark:hover:text-gray-300"
-                    }`}
+          <footer className="h-full border-t border-border-subtle bg-surface-1 flex flex-col">
+            {/* Tab bar */}
+            <div className="h-9 border-b border-border-subtle flex items-center px-1 gap-0.5 overflow-x-auto no-scrollbar flex-shrink-0">
+              {/* Terminal tabs */}
+              <div className="flex items-center gap-0.5 flex-1 min-w-0 overflow-x-auto no-scrollbar">
+                {terminals.map((t) => {
+                  const isRun = t.id.startsWith("run-");
+                  const isActive = activeTerminalId === t.id;
+                  return (
+                    <div
+                      key={t.id}
+                      onClick={() => setActiveTerminalId(t.id)}
+                      className={`group flex items-center gap-1.5 px-2.5 py-1 rounded-md cursor-pointer text-[11px] shrink-0 whitespace-nowrap transition-colors ${
+                        isActive
+                          ? "bg-surface-2 text-text-primary shadow-sm"
+                          : "text-text-secondary hover:text-text-primary hover:bg-surface-hover"
+                      }`}
+                    >
+                      {isRun
+                        ? <Play size={10} className={isActive ? "text-green-500" : "text-text-muted group-hover:text-green-500"} />
+                        : <Terminal size={10} className={isActive ? "text-accent" : "text-text-muted group-hover:text-accent"} />}
+                      <span>{t.label}</span>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); closeTerminal(t.id); }}
+                        className="opacity-0 group-hover:opacity-100 hover:text-red-400 transition-opacity ml-0.5 leading-none"
+                        title="Close terminal"
+                      >
+                        <X size={10} />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Right-side actions */}
+              <div className="flex items-center gap-0.5 flex-shrink-0 ml-auto pl-1">
+                {/* New terminal */}
+                <button
+                  onClick={createTerminal}
+                  title="New terminal (Ctrl+Shift+`)"
+                  className="p-1.5 rounded text-text-secondary hover:text-text-primary hover:bg-surface-hover transition-colors"
                 >
-                  <Terminal size={13} />
-                  <span>{t.label}</span>
+                  <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+                  </svg>
+                </button>
+                {/* Clear active terminal */}
+                {terminals.length > 0 && (
                   <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      closeTerminal(t.id);
-                    }}
-                    className="hover:text-red-400"
+                    onClick={clearActiveTerminal}
+                    title="Clear terminal (Ctrl+L)"
+                    className="p-1.5 rounded text-text-secondary hover:text-text-primary hover:bg-surface-hover transition-colors"
                   >
-                    ✕
+                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M18 6 6 18" /><path d="m6 6 12 12" />
+                    </svg>
                   </button>
-                </div>
-              ))}
-              <button
-                onClick={createTerminal}
-                title="New terminal"
-                className="ml-1 p-1.5 rounded-md text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors shrink-0"
-              >
-                +
-              </button>
+                )}
+                {/* Maximize / restore */}
+                <button
+                  onClick={() => setIsTerminalMaximized((v) => !v)}
+                  title={isTerminalMaximized ? "Restore terminal" : "Maximize terminal"}
+                  className="p-1.5 rounded text-text-secondary hover:text-text-primary hover:bg-surface-hover transition-colors"
+                >
+                  {isTerminalMaximized ? (
+                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <polyline points="4 14 10 14 10 20" /><polyline points="20 10 14 10 14 4" />
+                      <line x1="10" y1="14" x2="21" y2="3" /><line x1="3" y1="21" x2="14" y2="10" />
+                    </svg>
+                  ) : (
+                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <polyline points="15 3 21 3 21 9" /><polyline points="9 21 3 21 3 15" />
+                      <line x1="21" y1="3" x2="14" y2="10" /><line x1="3" y1="21" x2="10" y2="14" />
+                    </svg>
+                  )}
+                </button>
+                {/* Collapse */}
+                <button
+                  onClick={toggleTerminalPanel}
+                  title="Hide terminal (Ctrl+`)"
+                  className="p-1.5 rounded text-gray-500 hover:text-white hover:bg-gray-800 transition-colors"
+                >
+                  <PanelBottom size={12} />
+                </button>
+              </div>
             </div>
+
+            {/* Terminal content area */}
             <div className="flex-1 overflow-hidden relative">
               {terminals.length === 0 ? (
-                <div className="flex flex-col items-center justify-center h-full text-center gap-2">
-                  <Terminal size={28} className="text-gray-700" />
-                  <p className="text-xs text-gray-500">No terminal open</p>
+                <div className="flex flex-col items-center justify-center h-full text-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-gray-800/60 flex items-center justify-center">
+                    <Terminal size={20} className="text-gray-500" />
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-400 font-medium">No terminal open</p>
+                    <p className="text-[10px] text-gray-600 mt-0.5">Press Ctrl+Shift+` or click + to start one</p>
+                  </div>
                   <button
                     onClick={createTerminal}
-                    className="text-xs text-blue-400 hover:underline"
+                    className="text-[11px] px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-md transition-colors font-medium"
                   >
-                    Start one
+                    New Terminal
                   </button>
                 </div>
               ) : (
@@ -1686,14 +1905,15 @@ export default function WorkspacePage() {
                     key={t.id}
                     className="absolute inset-0"
                     style={{
-                      // visibility (not display:none) keeps the container's
-                      // real size intact while hidden, which xterm needs to
-                      // compute cell/font dimensions without crashing.
                       visibility: activeTerminalId === t.id ? "visible" : "hidden",
                       pointerEvents: activeTerminalId === t.id ? "auto" : "none",
                     }}
                   >
-                    <IDETerminal sessionId={t.sessionId} />
+                    <IDETerminal
+                      sessionId={t.sessionId}
+                      onSessionExpired={() => replaceTerminalSession(t.id)}
+                      onReady={(clearFn) => terminalClearFns.current.set(t.id, clearFn)}
+                    />
                   </div>
                 ))
               )}

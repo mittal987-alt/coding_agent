@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { Loader2, GitBranch, GitCommit, Check, ChevronDown, ChevronRight, RefreshCw, Upload, Plus, Trash2 } from "lucide-react";
+import { apiBaseUrl } from "@/lib/api";
 
 type FileStatus = "modified" | "untracked" | "staged" | "deleted";
 
@@ -49,7 +50,7 @@ export default function GitPanel({ projectId }: { projectId: string }) {
 
   const loadBranches = useCallback(async () => {
     try {
-      const res = await fetch(`http://localhost:8000/api/v1/projects/${projectId}/git/branches`);
+      const res = await fetch(`${apiBaseUrl}/projects/${projectId}/git/branches`);
       const json = await res.json();
       if (json.success && json.data) {
         setBranches(json.data);
@@ -62,7 +63,7 @@ export default function GitPanel({ projectId }: { projectId: string }) {
   const refreshStatus = useCallback(async () => {
     setIsLoadingStatus(true);
     try {
-      const res = await fetch(`http://localhost:8000/api/v1/projects/${projectId}/git/status`);
+      const res = await fetch(`${apiBaseUrl}/projects/${projectId}/git/status`);
       const json = await res.json();
       if (json.success && json.data) {
         const data = json.data as Record<string, string>;
@@ -83,7 +84,7 @@ export default function GitPanel({ projectId }: { projectId: string }) {
   const loadLog = useCallback(async () => {
     setIsLoadingLog(true);
     try {
-      const res = await fetch(`http://localhost:8000/api/v1/projects/${projectId}/git/log`);
+      const res = await fetch(`${apiBaseUrl}/projects/${projectId}/git/log`);
       const json = await res.json();
       if (json.success) setCommits(json.data || []);
     } catch {
@@ -115,7 +116,7 @@ export default function GitPanel({ projectId }: { projectId: string }) {
     setCommitError(null);
     setCommitSuccess(null);
     try {
-      const res = await fetch(`http://localhost:8000/api/v1/projects/${projectId}/git/commit`, {
+      const res = await fetch(`${apiBaseUrl}/projects/${projectId}/git/commit`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message: commitMsg }),
@@ -144,7 +145,7 @@ export default function GitPanel({ projectId }: { projectId: string }) {
     setCommitError(null);
     setCommitSuccess(null);
     try {
-      const res = await fetch(`http://localhost:8000/api/v1/projects/${projectId}/git/push`, {
+      const res = await fetch(`${apiBaseUrl}/projects/${projectId}/git/push`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
       });
@@ -167,7 +168,7 @@ export default function GitPanel({ projectId }: { projectId: string }) {
     if (!newBranchName.trim()) return;
     setIsBranchLoading(true);
     try {
-      const res = await fetch(`http://localhost:8000/api/v1/projects/${projectId}/git/branches`, {
+      const res = await fetch(`${apiBaseUrl}/projects/${projectId}/git/branches`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: newBranchName.trim() }),
@@ -187,7 +188,7 @@ export default function GitPanel({ projectId }: { projectId: string }) {
     if (branch === branches.current) return;
     setIsBranchLoading(true);
     try {
-      const res = await fetch(`http://localhost:8000/api/v1/projects/${projectId}/git/checkout`, {
+      const res = await fetch(`${apiBaseUrl}/projects/${projectId}/git/checkout`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ branch }),
@@ -208,7 +209,7 @@ export default function GitPanel({ projectId }: { projectId: string }) {
     if (branch === branches.current || !confirm(`Delete branch '${branch}'?`)) return;
     setIsBranchLoading(true);
     try {
-      const res = await fetch(`http://localhost:8000/api/v1/projects/${projectId}/git/branches/${encodeURIComponent(branch)}`, {
+      const res = await fetch(`${apiBaseUrl}/projects/${projectId}/git/branches/${encodeURIComponent(branch)}`, {
         method: "DELETE",
       });
       const json = await res.json();

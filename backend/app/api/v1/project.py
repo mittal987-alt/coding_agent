@@ -989,6 +989,127 @@ def git_revert_file(
 
 
 # ---------------------------------------------------------------------------
+# Run project — detect & launch dev/build/test command in a terminal session
+# ---------------------------------------------------------------------------
+
+def _detect_run_command(repo_path: Path) -> tuple[str, str]:
+    """
+    Inspect the project directory and return (label, command) for the most
+    appropriate dev/run command.  Checks, in priority order:
+      1. package.json  → npm run dev / npm start
+      2. Makefile      → make run / make dev / make start
+      3. requirements.txt / setup.py / pyproject.toml → uvicorn / python / flask
+      4. Cargo.toml    → cargo run
+      5. go.mod        → go run .
+      6. Fallback      → echo (no command found)
+    """
+    import json as _json
+
+    # --- Node.js / package.json ---
+    pkg = repo_path / "package.json"
+    if pkg.exists():
+        try:
+            data = _json.loads(pkg.read_text(encoding="utf-8"))
+            scripts = data.get("scripts", {})
+            if "dev" in scripts:
+                return "npm dev", "npm run dev"
+            if "start" in scripts:
+                return "npm start", "npm start"
+            if "serve" in scripts:
+                return "npm serve", "npm run serve"
+        except Exception:
+            pass
+        return "npm start", "npm start"
+
+    # --- Makefile ---
+    makefile = repo_path / "Makefile"
+    if makefile.exists():
+        content = makefile.read_text(encoding="utf-8", errors="ignore")
+        for target in ("run", "dev", "start", "serve"):
+            if f"\n{target}:" in content or content.startswith(f"{target}:"):
+                return f"make {target}", f"make {target}"
+
+    # --- Python ---
+    has_req = (repo_path / "requirements.txt").exists()
+    has_setup = (repo_path / "setup.py").exists()
+    has_pyproject = (repo_path / "pyproject.toml").exists()
+
+    if has_req or has_setup or has_pyproject:
+        # Look for a main.py / app.py / run.py that imports uvicorn / FastAPI / Flask
+        for candidate in ["main.py", "app.py", "run.py", "server.py", "manage.py"]:
+            f = repo_path / candidate
+            if f.exists():
+                src = f.read_text(encoding="utf-8", errors="ignore")
+                if "uvicorn" in src or "fastapi" in src.lower():
+                    return "uvicorn", f"uvicorn {candidate[:-3]}:app --reload"
+                if "flask" in src.lower():
+                    return "flask run", "flask run --debug"
+                if candidate == "manage.py":
+                    return "django", "python manage.py runserver"
+                return f"python {candidate}", f"python {candidate}"
+        return "python", "python main.py"
+
+    # --- Rust ---
+    if (repo_path / "Cargo.toml").exists():
+        return "cargo run", "cargo run"
+
+    # --- Go ---
+    if (repo_path / "go.mod").exists():
+        return "go run", "go run ."
+
+    # --- Fallback ---
+    return "No command detected", 'echo "No run command detected for this project"'
+
+
+@router.post("/{project_id}/run", response_model=ApiResponse)
+def run_project(
+    project_id: str,
+    service: ProjectService = Depends(get_project_service),
+):
+    """
+    Detect the project's run command, spawn a new PTY terminal session,
+    inject the command, and return the session details so the frontend can
+    open a live terminal tab pre-running the project.
+    """
+    from app.terminal.manager import terminal_manager
+    import time as _time
+
+    project = service.get_project(project_id)
+    if project is None:
+        raise HTTPException(status_code=404, detail="Project not found.")
+
+    repo_path = storage.repository_path(project.id)
+    if not repo_path.exists():
+        raise HTTPException(status_code=400, detail="Project workspace not found. Clone or upload files first.")
+
+    label, command = _detect_run_command(repo_path)
+
+    # Create a fresh PTY terminal session rooted at the repository
+    session = terminal_manager.create(
+        cwd=str(repo_path),
+        project_name=project.name,
+    )
+
+    # Give the shell a moment to finish its init sequence before injecting
+    _time.sleep(0.5)
+
+    # Inject the run command — the PTY is live, so the frontend terminal
+    # will display the output in real-time just like any typed command.
+    session.write(f"{command}\r\n")
+
+    return ApiResponse(
+        success=True,
+        message=f"Running: {command}",
+        data={
+            "run_id": session.id,
+            "session_id": session.id,
+            "command": command,
+            "label": label,
+        },
+    )
+
+
+# ---------------------------------------------------------------------------
 # Git file content at HEAD
 # ---------------------------------------------------------------------------
 
@@ -1020,3 +1141,119 @@ def git_file_at_head(
         return ApiResponse(success=True, message="Success", data=result.stdout)
     except Exception as e:
         return ApiResponse(success=False, message=str(e), data="")
+
+
+# ---------------------------------------------------------------------------
+# RAG indexing — build / rebuild the project's vector index
+# ---------------------------------------------------------------------------
+
+@router.post("/{project_id}/index", response_model=ApiResponse)
+async def index_project(
+    project_id: str,
+    service: ProjectService = Depends(get_project_service),
+):
+    """Build (or rebuild) the FAISS vector index for this project's repository."""
+    import asyncio
+
+    project = service.get_project(project_id)
+    if project is None:
+        raise HTTPException(status_code=404, detail="Project not found.")
+
+    repo_path = storage.repository_path(project.id)
+    vectorstore_path = storage.vectorstore_path(project.id)
+
+    if not repo_path.exists():
+        raise HTTPException(status_code=400, detail="No repository to index. Upload files first.")
+
+    try:
+        from app.services.indexing_service import build_index
+        count = await asyncio.to_thread(build_index, repo_path, vectorstore_path)
+    except ImportError as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Indexing dependencies not installed: {e}. Run: pip install faiss-cpu sentence-transformers",
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Indexing failed: {e}")
+
+    return ApiResponse(
+        success=True,
+        message=f"Indexed {count} chunks.",
+        data={"chunks_indexed": count},
+    )
+
+
+# ---------------------------------------------------------------------------
+# Run project
+# ---------------------------------------------------------------------------
+
+@router.post("/{project_id}/run", response_model=ApiResponse)
+def run_project(
+    project_id: str,
+    service: ProjectService = Depends(get_project_service),
+):
+    """Detect and run the project's start command in a PTY terminal session."""
+    from app.terminal.manager import terminal_manager
+
+    project = service.get_project(project_id)
+    if project is None:
+        raise HTTPException(status_code=404, detail="Project not found.")
+
+    repo_path = storage.repository_path(project.id)
+
+    # Detect run command heuristically
+    command = "npm start"
+    label = "npm start"
+    if (repo_path / "package.json").exists():
+        try:
+            import json as _json
+            pkg = _json.loads((repo_path / "package.json").read_text())
+            scripts = pkg.get("scripts", {})
+            if "dev" in scripts:
+                command, label = "npm run dev", "npm run dev"
+            elif "start" in scripts:
+                command, label = "npm start", "npm start"
+        except Exception:
+            pass
+    elif (repo_path / "requirements.txt").exists() or (repo_path / "pyproject.toml").exists():
+        command, label = "python main.py", "python main.py"
+    elif (repo_path / "Makefile").exists():
+        command, label = "make", "make"
+
+    session = terminal_manager.create(
+        cwd=str(repo_path),
+        project_name=project.name,
+        env_vars=project.env_vars or {},
+    )
+    session.write(f"{command}\r\n")
+
+    return ApiResponse(
+        success=True,
+        message=f"Running: {command}",
+        data={"run_id": session.id, "command": command, "label": label},
+    )
+
+
+# ---------------------------------------------------------------------------
+# Project stats (git metrics)
+# ---------------------------------------------------------------------------
+
+@router.get("/{project_id}/stats", response_model=ApiResponse)
+async def get_project_stats(
+    project_id: str,
+    service: ProjectService = Depends(get_project_service),
+):
+    """Return real git-based statistics for the project dashboard."""
+    import asyncio
+
+    project = service.get_project(project_id)
+    if project is None:
+        raise HTTPException(status_code=404, detail="Project not found.")
+
+    stats = await asyncio.to_thread(service.get_stats, project)
+
+    return ApiResponse(
+        success=True,
+        message="Project stats fetched successfully.",
+        data=stats,
+    )

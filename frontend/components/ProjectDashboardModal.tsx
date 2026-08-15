@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import { Activity, GitCommit, FileCode, CheckCircle, X, BarChart3, Clock, Users } from "lucide-react";
+import { ProjectService } from "@/services/projects";
 
 export default function ProjectDashboardModal({
   isOpen,
@@ -16,15 +17,7 @@ export default function ProjectDashboardModal({
 
   useEffect(() => {
     if (isOpen) {
-      // For now, mock the stats until the backend endpoint is fully populated
-      setStats({
-        linesChanged: 1245,
-        filesModified: 14,
-        testsPassed: 42,
-        totalCommits: 8,
-        activeAgents: 2,
-        timeSaved: "4h 15m"
-      });
+      ProjectService.getProjectStats(projectId).then(setStats).catch(console.error);
     }
   }, [isOpen, projectId]);
 

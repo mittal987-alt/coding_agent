@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { Search, X, FileCode, Loader2, ChevronDown, ChevronRight, CaseSensitive, ReplaceAll } from "lucide-react";
+import { apiBaseUrl } from "@/lib/api";
 
 type SearchResult = {
   path: string;
@@ -64,7 +65,7 @@ export default function SearchPanel({
       }
       setIsSearching(true);
       try {
-        const url = `http://localhost:8000/api/v1/projects/${projectId}/search?q=${encodeURIComponent(q)}&case_sensitive=${caseSensitive}`;
+        const url = `${apiBaseUrl}/projects/${projectId}/search?q=${encodeURIComponent(q)}&case_sensitive=${caseSensitive}`;
         const res = await fetch(url);
         const json = await res.json();
         if (json.success) {
@@ -107,7 +108,7 @@ export default function SearchPanel({
     if (!confirm(`Are you sure you want to replace all occurrences of '${query}' with '${replaceStr}'? This action cannot be easily undone.`)) return;
     setIsReplacing(true);
     try {
-      const res = await fetch(`http://localhost:8000/api/v1/projects/${projectId}/files/replace`, {
+      const res = await fetch(`${apiBaseUrl}/projects/${projectId}/files/replace`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ search: query, replace: replaceStr, case_sensitive: caseSensitive })

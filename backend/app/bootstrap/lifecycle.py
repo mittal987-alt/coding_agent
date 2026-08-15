@@ -144,7 +144,12 @@ async def on_startup() -> None:
 
 async def on_shutdown() -> None:
     from app.bootstrap.container import container as app_container
+    from app.terminal.manager import terminal_manager
     logger.info("Shutting down application components...")
+    # Close all PTY terminal sessions first so that executor threads
+    # blocked in session.read() are unblocked before asyncio joins the
+    # thread pool — avoids the 300-second shutdown hang.
+    terminal_manager.shutdown_all()
     await close_tool_registry(app_container)  # type: ignore[arg-type]
     await close_workspace(app_container)  # type: ignore[arg-type]
     await close_memory(app_container)  # type: ignore[arg-type]

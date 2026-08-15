@@ -115,6 +115,11 @@ export const ProjectService = {
     await apiClient.delete<ApiResponse<null>>(`/projects/${id}`);
   },
 
+  getProjectStats: async (id: string | number): Promise<any> => {
+    const response = await apiClient.get<ApiResponse<any>>(`/projects/${id}/stats`);
+    return response.data.data;
+  },
+
   // --- Environment variables ---
   getEnvVars: async (projectId: string): Promise<EnvVar[]> => {
     const response = await apiClient.get<ApiResponse<EnvVar[]>>(`/projects/${projectId}/env-vars`);
@@ -168,8 +173,13 @@ export const ProjectService = {
 
   // --- Feature 8: RAG indexing ---
   indexProject: async (projectId: string): Promise<IndexResult> => {
+    // Indexing involves downloading a ~90MB SentenceTransformer model (on first run)
+    // and running CPU embeddings, which can easily exceed the default 10s timeout.
+    // Give it 3 minutes instead.
     const response = await apiClient.post<ApiResponse<IndexResult>>(
-      `/projects/${projectId}/index`
+      `/projects/${projectId}/index`,
+      {},
+      { timeout: 180000 }
     );
     return response.data.data;
   },

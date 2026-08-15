@@ -1,61 +1,94 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Terminal } from "xterm";
 import { FitAddon } from "xterm-addon-fit";
+import { WebLinksAddon } from "xterm-addon-web-links";
 
 import "xterm/css/xterm.css";
 
 export default function IDETerminal({
   sessionId,
-  onResize,
+  onSessionExpired,
+  onReady,
 }: {
   sessionId: string;
-  onResize?: (cols: number, rows: number) => void;
+  onSessionExpired?: () => void;
+  /** Called once the terminal is mounted. Receives a `clear()` fn the parent can call. */
+  onReady?: (clearFn: () => void) => void;
 }) {
   const divRef = useRef<HTMLDivElement>(null);
+  const [expired, setExpired] = useState(false);
 
   useEffect(() => {
     if (!divRef.current) return;
+    setExpired(false);
 
     const terminal = new Terminal({
       cursorBlink: true,
-      convertEol: true,
+      // Do NOT set convertEol — the PTY (winpty) already sends \r\n.
+      // Setting convertEol:true causes double line-feeds.
+      convertEol: false,
       fontSize: 13,
+      fontFamily: "'Cascadia Code', 'Fira Code', 'Consolas', monospace",
       scrollback: 5000,
+      allowProposedApi: true,
       theme: {
         background: "#111111",
+        foreground: "#d4d4d4",
+        cursor: "#aeafad",
+        cursorAccent: "#111111",
+        selectionBackground: "#264f78",
+        black: "#1e1e1e",
+        red: "#f44747",
+        green: "#6a9955",
+        yellow: "#d7ba7d",
+        blue: "#569cd6",
+        magenta: "#c586c0",
+        cyan: "#4ec9b0",
+        white: "#d4d4d4",
+        brightBlack: "#808080",
+        brightRed: "#f44747",
+        brightGreen: "#b5cea8",
+        brightYellow: "#dcdcaa",
+        brightBlue: "#9cdcfe",
+        brightMagenta: "#c586c0",
+        brightCyan: "#4ec9b0",
+        brightWhite: "#ffffff",
       },
     });
 
     const fitAddon = new FitAddon();
     terminal.loadAddon(fitAddon);
+    terminal.loadAddon(new WebLinksAddon());
 
     terminal.open(divRef.current);
 
-    // xterm can't compute cell/font dimensions on a zero-size container.
-    const safeFit = (socket?: WebSocket) => {
-      const el = divRef.current;
-      if (!el || el.offsetWidth === 0 || el.offsetHeight === 0) return;
-      if (!terminal.element) return;
-      try {
-        fitAddon.fit();
-        const { cols, rows } = terminal;
-        onResize?.(cols, rows);
-        // Tell backend PTY about new dimensions
-        if (socket && socket.readyState === WebSocket.OPEN) {
-          socket.send(JSON.stringify({ type: "resize", cols, rows }));
-        }
-      } catch (err) {
-        console.warn("Terminal fit skipped:", err);
-      }
-    };
+    requestAnimationFrame(() => {
+      fitAddon.fit();
+      terminal.focus();
+    });
+
+    // Expose a clear function to the parent via onReady
+    onReady?.(() => terminal.clear());
+
+    const focusHandler = () => terminal.focus();
+    divRef.current.addEventListener("click", focusHandler);
 
     const socket = new WebSocket(`ws://localhost:8000/ws/${sessionId}`);
 
+    // Send the current terminal dimensions to the backend as soon as the
+    // WebSocket opens so the PTY cols/rows match what xterm is rendering.
+    const sendResize = (cols: number, rows: number) => {
+      if (socket.readyState === WebSocket.OPEN) {
+        socket.send(JSON.stringify({ type: "resize", cols, rows }));
+      }
+    };
+
     socket.onopen = () => {
       setTimeout(() => {
-        safeFit(socket);
+        fitAddon.fit();
+        sendResize(terminal.cols, terminal.rows);
         terminal.focus();
       }, 100);
     };
@@ -68,36 +101,49 @@ export default function IDETerminal({
       console.error("WebSocket Error", err);
     };
 
-    socket.onclose = () => {
-      console.log("WebSocket closed");
+    socket.onclose = (event) => {
+      console.log("WebSocket closed", event.code, event.reason);
+      // 4001 = our custom "session_expired" close code from the backend
+      if (event.code === 4001) {
+        setExpired(true);
+      }
     };
 
     terminal.onData((data) => {
+      // Ctrl+L → clear the xterm viewport (the shell will also receive ^L
+      // which clears the PowerShell host buffer on its side too).
+      if (data === "\x0c") {
+        terminal.clear();
+      }
       if (socket.readyState === WebSocket.OPEN) {
         socket.send(data);
       }
     });
 
-    requestAnimationFrame(() => {
-      safeFit(socket);
-      terminal.focus();
+    // Whenever xterm changes its cols/rows (due to fitAddon), tell the backend.
+    terminal.onResize(({ cols, rows }) => {
+      sendResize(cols, rows);
     });
 
-    const focusHandler = () => terminal.focus();
-    divRef.current.addEventListener("click", focusHandler);
+    const handleWindowResize = () => {
+      fitAddon.fit();
+    };
 
-    const resizeHandler = () => safeFit(socket);
-    window.addEventListener("resize", resizeHandler);
+    window.addEventListener("resize", handleWindowResize);
 
     const observer = new ResizeObserver(() => {
-      safeFit(socket);
+      // Debounce slightly so we don't flood resize messages while
+      // the user is dragging a panel splitter.
+      requestAnimationFrame(() => {
+        fitAddon.fit();
+      });
     });
 
     observer.observe(divRef.current);
 
     return () => {
       observer.disconnect();
-      window.removeEventListener("resize", resizeHandler);
+      window.removeEventListener("resize", handleWindowResize);
       divRef.current?.removeEventListener("click", focusHandler);
 
       if (
@@ -109,7 +155,29 @@ export default function IDETerminal({
 
       terminal.dispose();
     };
-  }, [sessionId]);
+  }, [sessionId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  if (expired) {
+    return (
+      <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-[#111111] text-center px-6 z-10">
+        <p className="text-sm text-gray-400">
+          This terminal session expired (likely a backend restart).
+        </p>
+        {onSessionExpired ? (
+          <button
+            onClick={onSessionExpired}
+            className="text-xs px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+          >
+            Start a new terminal
+          </button>
+        ) : (
+          <p className="text-xs text-gray-600">
+            (No reconnect handler was provided to this terminal.)
+          </p>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div
