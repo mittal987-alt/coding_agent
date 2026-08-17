@@ -1151,6 +1151,41 @@ class _ChatBody(_PydanticBase):
     require_plan: bool = False    # Feature 5: two-phase plan/execute
     approved_plan: str | None = None   # Feature 5: pass back approved plan
 
+def _format_multimodal_messages(model: str, raw_messages: list[dict]) -> list[dict]:
+    formatted = []
+    for msg in raw_messages:
+        if not msg.get("images"):
+            # Simple text message
+            formatted.append({"role": msg["role"], "content": msg["content"]})
+            continue
+            
+        # Multimodal message
+        content_array = [{"type": "text", "text": msg["content"]}]
+        for img_data in msg["images"]:
+            if "gpt" in model.lower() or "openai" in model.lower() or "mistral" in model.lower():
+                content_array.append({
+                    "type": "image_url",
+                    "image_url": {"url": img_data}
+                })
+            elif "claude" in model.lower() or "anthropic" in model.lower():
+                # Claude expects base64 without the data URI prefix for its source block
+                # img_data is usually "data:image/jpeg;base64,..."
+                try:
+                    media_type, base64_str = img_data.split(";base64,")
+                    media_type = media_type.replace("data:", "")
+                    content_array.append({
+                        "type": "image",
+                        "source": {
+                            "type": "base64",
+                            "media_type": media_type,
+                            "data": base64_str
+                        }
+                    })
+                except Exception:
+                    pass
+        formatted.append({"role": msg["role"], "content": content_array})
+    return formatted
+
 
 def _call_llm(model: str, messages: list[dict], temperature: float, api_key_override: str = "") -> str:
     """Call the appropriate LLM provider and return the reply string."""
@@ -1223,12 +1258,22 @@ def project_chat(
 
     model = project.llm_model or body.model or "gpt-4o"
     repo_path = storage.repository_path(project.id)
-    messages = [m for m in body.messages]   # shallow copy
+    messages = _format_multimodal_messages(model, body.messages)
 
     # ── Feature 8: inject codebase context ──────────────────────────────────
-    user_text = next(
-        (m["content"] for m in reversed(messages) if m.get("role") == "user"), ""
-    )
+    user_text = ""
+    for m in reversed(messages):
+        if m.get("role") == "user":
+            content = m.get("content")
+            if isinstance(content, str):
+                user_text = content
+                break
+            elif isinstance(content, list):
+                for item in content:
+                    if item.get("type") == "text":
+                        user_text = item.get("text", "")
+                        break
+                break
     if repo_path.exists():
         ctx = _build_context_prompt(repo_path, user_text, project_id)
         if ctx:
@@ -1303,13 +1348,22 @@ async def project_chat_stream(
 
     model = project.llm_model or body.model or "gpt-4o"
     repo_path = storage.repository_path(project.id)
-    messages = list(body.messages)
+    messages = _format_multimodal_messages(model, body.messages)
 
-    user_text = next(
-        (m["content"] for m in reversed(messages)
-         if m.get("role") == "user" and isinstance(m.get("content"), str)),
-        "",
-    )
+    user_text = ""
+    for m in reversed(messages):
+        if m.get("role") == "user":
+            content = m.get("content")
+            if isinstance(content, str):
+                user_text = content
+                break
+            elif isinstance(content, list):
+                # Extract the text portion from the multimodal array
+                for item in content:
+                    if item.get("type") == "text":
+                        user_text = item.get("text", "")
+                        break
+                break
     if repo_path.exists():
         ctx = _build_context_prompt(repo_path, user_text, project_id)
         if ctx:

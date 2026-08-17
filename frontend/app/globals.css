@@ -6,36 +6,38 @@
   --background: #f8fafc;
   --foreground: #0f172a;
   
-  --bg-surface-1: #ffffff;
-  --bg-surface-2: #f1f5f9;
-  --bg-surface-hover: #e2e8f0;
+  --bg-surface-1: rgba(255, 255, 255, 0.7);
+  --bg-surface-2: rgba(241, 245, 249, 0.5);
+  --bg-surface-hover: rgba(226, 232, 240, 0.8);
   --bg-surface-active: #cbd5e1;
 
   --text-primary: #0f172a;
   --text-secondary: #475569;
   --text-muted: #64748b;
   
-  --border-color: #e2e8f0;
+  --border-color: rgba(226, 232, 240, 0.6);
   --accent-color: #3b82f6;
   --accent-hover: #2563eb;
 }
 
 :root.dark {
-  --background: #09090b;
-  --foreground: #fafafa;
+  /* Rich, vibrant dark mode background */
+  --background: #0B0E14;
+  --foreground: #f8fafc;
   
-  --bg-surface-1: #151515;
-  --bg-surface-2: #1e1e1e;
-  --bg-surface-hover: #2a2a2a;
-  --bg-surface-active: #333333;
+  /* Glassmorphic surface colors */
+  --bg-surface-1: rgba(21, 25, 33, 0.6);
+  --bg-surface-2: rgba(30, 36, 48, 0.5);
+  --bg-surface-hover: rgba(42, 50, 65, 0.7);
+  --bg-surface-active: #334155;
 
-  --text-primary: #f4f4f5;
-  --text-secondary: #a1a1aa;
-  --text-muted: #71717a;
+  --text-primary: #f8fafc;
+  --text-secondary: #cbd5e1;
+  --text-muted: #94a3b8;
   
-  --border-color: #27272a;
-  --accent-color: #3b82f6;
-  --accent-hover: #60a5fa;
+  --border-color: rgba(51, 65, 85, 0.5);
+  --accent-color: #60a5fa;
+  --accent-hover: #93c5fd;
 }
 
 @theme inline {
@@ -62,5 +64,52 @@
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans), Arial, Helvetica, sans-serif;
+  /* subtle animated gradient mesh background for dark mode */
+}
+
+body.dark {
+  background: radial-gradient(circle at 15% 50%, rgba(20, 35, 70, 0.15), transparent 25%),
+              radial-gradient(circle at 85% 30%, rgba(40, 20, 60, 0.15), transparent 25%),
+              var(--background);
+  background-attachment: fixed;
+}
+
+/* Glassmorphism Utility */
+.glass {
+  background: var(--bg-surface-1);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--border-color);
+}
+
+.glass-panel {
+  background: var(--bg-surface-2);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--border-color);
+  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
+}
+
+/* Smooth Transitions */
+* {
+  transition-property: background-color, border-color, color, fill, stroke, opacity, box-shadow, transform;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  transition-duration: 200ms;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--bg-surface-hover);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--bg-surface-active);
 }

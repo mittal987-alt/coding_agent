@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { Terminal } from "xterm";
 import { FitAddon } from "xterm-addon-fit";
 import { WebLinksAddon } from "xterm-addon-web-links";
+import { Terminal as TerminalIcon, RotateCcw } from "lucide-react";
 
 import "xterm/css/xterm.css";
 
@@ -14,11 +15,11 @@ export default function IDETerminal({
 }: {
   sessionId: string;
   onSessionExpired?: () => void;
-  /** Called once the terminal is mounted. Receives a `clear()` fn the parent can call. */
-  onReady?: (clearFn: () => void) => void;
+  onReady?: (actions: { clear: () => void; getContent: () => string }) => void;
 }) {
   const divRef = useRef<HTMLDivElement>(null);
   const [expired, setExpired] = useState(false);
+  const [isConnected, setIsConnected] = useState(false);
 
   useEffect(() => {
     if (!divRef.current) return;
@@ -26,18 +27,16 @@ export default function IDETerminal({
 
     const terminal = new Terminal({
       cursorBlink: true,
-      // Do NOT set convertEol — the PTY (winpty) already sends \r\n.
-      // Setting convertEol:true causes double line-feeds.
       convertEol: false,
       fontSize: 13,
       fontFamily: "'Cascadia Code', 'Fira Code', 'Consolas', monospace",
       scrollback: 5000,
       allowProposedApi: true,
       theme: {
-        background: "#111111",
+        background: "#0d0d0d",
         foreground: "#d4d4d4",
         cursor: "#aeafad",
-        cursorAccent: "#111111",
+        cursorAccent: "#0d0d0d",
         selectionBackground: "#264f78",
         black: "#1e1e1e",
         red: "#f44747",
@@ -64,21 +63,31 @@ export default function IDETerminal({
 
     terminal.open(divRef.current);
 
-    requestAnimationFrame(() => {
+    const timer = setTimeout(() => {
       fitAddon.fit();
       terminal.focus();
-    });
+    }, 50);
 
-    // Expose a clear function to the parent via onReady
-    onReady?.(() => terminal.clear());
+    onReady?.({
+      clear: () => terminal.clear(),
+      getContent: () => {
+        const buffer = terminal.buffer.active;
+        let content = "";
+        for (let i = 0; i < buffer.length; i++) {
+          const line = buffer.getLine(i);
+          if (line) {
+            content += line.translateToString(true) + "\n";
+          }
+        }
+        return content;
+      }
+    });
 
     const focusHandler = () => terminal.focus();
     divRef.current.addEventListener("click", focusHandler);
 
     const socket = new WebSocket(`ws://localhost:8000/ws/${sessionId}`);
 
-    // Send the current terminal dimensions to the backend as soon as the
-    // WebSocket opens so the PTY cols/rows match what xterm is rendering.
     const sendResize = (cols: number, rows: number) => {
       if (socket.readyState === WebSocket.OPEN) {
         socket.send(JSON.stringify({ type: "resize", cols, rows }));
@@ -86,6 +95,7 @@ export default function IDETerminal({
     };
 
     socket.onopen = () => {
+      setIsConnected(true);
       setTimeout(() => {
         fitAddon.fit();
         sendResize(terminal.cols, terminal.rows);
@@ -102,16 +112,13 @@ export default function IDETerminal({
     };
 
     socket.onclose = (event) => {
-      console.log("WebSocket closed", event.code, event.reason);
-      // 4001 = our custom "session_expired" close code from the backend
+      setIsConnected(false);
       if (event.code === 4001) {
         setExpired(true);
       }
     };
 
     terminal.onData((data) => {
-      // Ctrl+L → clear the xterm viewport (the shell will also receive ^L
-      // which clears the PowerShell host buffer on its side too).
       if (data === "\x0c") {
         terminal.clear();
       }
@@ -120,7 +127,6 @@ export default function IDETerminal({
       }
     });
 
-    // Whenever xterm changes its cols/rows (due to fitAddon), tell the backend.
     terminal.onResize(({ cols, rows }) => {
       sendResize(cols, rows);
     });
@@ -132,16 +138,17 @@ export default function IDETerminal({
     window.addEventListener("resize", handleWindowResize);
 
     const observer = new ResizeObserver(() => {
-      // Debounce slightly so we don't flood resize messages while
-      // the user is dragging a panel splitter.
       requestAnimationFrame(() => {
         fitAddon.fit();
       });
     });
 
-    observer.observe(divRef.current);
+    if (divRef.current) {
+      observer.observe(divRef.current);
+    }
 
     return () => {
+      clearTimeout(timer);
       observer.disconnect();
       window.removeEventListener("resize", handleWindowResize);
       divRef.current?.removeEventListener("click", focusHandler);
@@ -155,35 +162,58 @@ export default function IDETerminal({
 
       terminal.dispose();
     };
-  }, [sessionId]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  if (expired) {
-    return (
-      <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-[#111111] text-center px-6 z-10">
-        <p className="text-sm text-gray-400">
-          This terminal session expired (likely a backend restart).
-        </p>
-        {onSessionExpired ? (
-          <button
-            onClick={onSessionExpired}
-            className="text-xs px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
-          >
-            Start a new terminal
-          </button>
-        ) : (
-          <p className="text-xs text-gray-600">
-            (No reconnect handler was provided to this terminal.)
-          </p>
-        )}
-      </div>
-    );
-  }
+  }, [sessionId]);
 
   return (
-    <div
-      ref={divRef}
-      className="w-full h-full overflow-hidden"
-      tabIndex={0}
-    />
+    <div className="w-full h-full flex flex-col bg-[#0d0d0d] border border-border-subtle rounded-xl overflow-hidden shadow-2xl">
+      
+      {/* Terminal Window Header Bar */}
+      <div className="h-9 px-4 bg-surface-1 border-b border-border-subtle flex items-center justify-between select-none shrink-0">
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1.5">
+            <div className="w-3 h-3 rounded-full bg-red-500/80 hover:bg-red-500 transition-colors cursor-pointer" />
+            <div className="w-3 h-3 rounded-full bg-yellow-500/80 hover:bg-yellow-500 transition-colors cursor-pointer" />
+            <div className="w-3 h-3 rounded-full bg-emerald-500/80 hover:bg-emerald-500 transition-colors cursor-pointer" />
+          </div>
+          <div className="h-3 w-[1px] bg-border-subtle" />
+          <div className="flex items-center gap-2 text-xs font-mono text-text-secondary">
+            <TerminalIcon size={13} className="text-accent" />
+            <span>bash // pty-session</span>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2 font-mono text-[11px]">
+          <span className={`w-2 h-2 rounded-full ${isConnected ? "bg-emerald-500 animate-pulse" : "bg-amber-500 animate-ping"}`} />
+          <span className="text-text-muted">{isConnected ? "connected" : "connecting..."}</span>
+        </div>
+      </div>
+
+      {/* Terminal Viewport Container (min-h-0 prevents flex collapse) */}
+      <div className="relative flex-1 min-h-0 w-full overflow-hidden p-2 bg-[#0d0d0d]">
+        {expired && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-[#0d0d0d]/95 backdrop-blur-sm text-center px-6 z-10">
+            <p className="text-xs font-mono text-text-secondary">
+              // session expired (backend runtime disconnected)
+            </p>
+            {onSessionExpired ? (
+              <button
+                onClick={onSessionExpired}
+                className="flex items-center gap-2 text-xs font-mono px-4 py-2 bg-accent hover:bg-accent-hover text-white rounded-lg transition-all shadow-md shadow-blue-500/20"
+              >
+                <RotateCcw size={13} />
+                <span>Restart PTY Shell</span>
+              </button>
+            ) : null}
+          </div>
+        )}
+
+        <div
+          ref={divRef}
+          className="w-full h-full overflow-hidden outline-none"
+          tabIndex={0}
+        />
+      </div>
+
+    </div>
   );
 }

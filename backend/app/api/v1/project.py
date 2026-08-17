@@ -596,8 +596,80 @@ def search_files(
 
 
 # ---------------------------------------------------------------------------
-# Git status (file tree badges & Git panel)
+# Global find & replace across project files
 # ---------------------------------------------------------------------------
+
+class _ReplaceRequest(_PydanticBase):
+    search: str
+    replace: str
+    case_sensitive: bool = False
+
+
+@router.post("/{project_id}/files/replace", response_model=ApiResponse)
+def replace_in_files(
+    project_id: str,
+    body: _ReplaceRequest,
+    service: ProjectService = Depends(get_project_service),
+):
+    """
+    Replace all occurrences of `search` with `replace` across every text
+    file in the project repository.  Returns the number of files changed.
+    """
+    project = service.get_project(project_id)
+    if project is None:
+        raise HTTPException(status_code=404, detail="Project not found.")
+
+    if not body.search:
+        return ApiResponse(success=False, message="Search string cannot be empty.", data=None)
+
+    repo_path = storage.repository_path(project.id)
+    if not repo_path.exists():
+        return ApiResponse(success=True, message="No repository files to replace in.", data={"files_changed": 0})
+
+    files_changed = 0
+    occurrences = 0
+
+    for file_path in repo_path.rglob("*"):
+        if file_path.is_dir():
+            continue
+        if any(part in _SKIP_DIRS for part in file_path.parts):
+            continue
+        if file_path.suffix.lower() in _BINARY_EXTS:
+            continue
+        try:
+            if file_path.stat().st_size > 500_000:
+                continue
+        except OSError:
+            continue
+
+        try:
+            original = file_path.read_text(encoding="utf-8", errors="ignore")
+        except Exception:
+            continue
+
+        if body.case_sensitive:
+            count = original.count(body.search)
+            if count > 0:
+                updated = original.replace(body.search, body.replace)
+                file_path.write_text(updated, encoding="utf-8")
+                files_changed += 1
+                occurrences += count
+        else:
+            import re as _re
+            pattern = _re.compile(_re.escape(body.search), _re.IGNORECASE)
+            count = len(pattern.findall(original))
+            if count > 0:
+                updated = pattern.sub(body.replace, original)
+                file_path.write_text(updated, encoding="utf-8")
+                files_changed += 1
+                occurrences += count
+
+    return ApiResponse(
+        success=True,
+        message=f"Replaced {occurrences} occurrence(s) in {files_changed} file(s).",
+        data={"files_changed": files_changed, "occurrences": occurrences},
+    )
+
 
 def _ensure_git_repo(repo_path: Path, default_branch: str = "main") -> bool:
     repo_path.mkdir(parents=True, exist_ok=True)

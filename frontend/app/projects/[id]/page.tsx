@@ -2,7 +2,7 @@
 
 import React, { useEffect, useRef, useState, useCallback, useLayoutEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, Loader2, MessageSquare, Terminal, FileCode, Play, Folder, Settings, Send, PanelLeft, PanelRight, PanelBottom, Save, GitBranch, Search, FilePlus, FolderPlus, Trash2, Edit3, Brain, Zap, Circle, X, Sun, Moon, BarChart3, Database, Command, History as HistoryIcon, RotateCcw } from "lucide-react";
+import { ArrowLeft, Loader2, MessageSquare, Terminal, FileCode, Play, Folder, Settings, Send, PanelLeft, PanelRight, PanelBottom, Save, GitBranch, Search, FilePlus, FolderPlus, Trash2, Edit3, Brain, Zap, Circle, X, Sun, Moon, BarChart3, Database, Command, History as HistoryIcon, RotateCcw, Sparkles, AlertCircle, CheckCircle2, SplitSquareHorizontal, Mic } from "lucide-react";
 import { ProjectService, Project } from "@/services/projects";
 import { apiBaseUrl } from "@/lib/api";
 import Link from "next/link";
@@ -40,54 +40,26 @@ const IDETerminal = dynamic(
   }
 );
 
-type Message = {
-  id: string;
-  role: "user" | "assistant";
-  content: string;
-  modifiedFiles?: string[];
-  activities?: string[];
-  images?: string[];
-};
-
-type FileStatus = "modified" | "untracked" | "staged" | "deleted";
-
-type FileNode = {
-  name: string;
-  path: string;
-  type: "file" | "directory";
-  children?: FileNode[];
-  status?: FileStatus;
-};
-
-type TerminalSession = {
-  id: string;
-  sessionId: string;
-  label: string;
-};
-
-type ContextMenuState = {
-  x: number;
-  y: number;
-  node: FileNode;
-} | null;
-
-/* ─── File-type icon colours ─── */
-const FILE_EXT_COLOR: Record<string, string> = {
-  ts: "text-blue-400", tsx: "text-blue-300", js: "text-yellow-400", jsx: "text-yellow-300",
-  py: "text-green-400", json: "text-yellow-500", md: "text-gray-300", css: "text-pink-400",
-  html: "text-orange-400", sh: "text-teal-400", yaml: "text-red-400", yml: "text-red-400",
-  toml: "text-orange-300", rs: "text-orange-500", go: "text-cyan-400", java: "text-red-500",
-  cpp: "text-blue-500", c: "text-blue-500", rb: "text-red-400", php: "text-purple-400",
-  sql: "text-green-300", env: "text-yellow-300", gitignore: "text-gray-400",
-  lock: "text-gray-500", txt: "text-gray-400",
-};
-
-function fileIconColor(name: string): string {
-  const ext = name.split(".").pop()?.toLowerCase() || "";
-  if (name === ".env" || name.startsWith(".env.")) return FILE_EXT_COLOR.env;
-  if (name === ".gitignore") return FILE_EXT_COLOR.gitignore;
-  return FILE_EXT_COLOR[ext] || "text-gray-400";
-}
+import { CodeBlock } from "./components/CodeBlock";
+import { FileNodeItem } from "./components/FileNodeItem";
+import { 
+  Message, 
+  FileStatus, 
+  FileNode, 
+  TerminalSession, 
+  ContextMenuState 
+} from "./components/types";
+import { 
+  fileIconColor, 
+  normalizePath, 
+  applyGitStatus, 
+  getLanguageFromPath, 
+  getFileNameFromPath, 
+  getTabLabel, 
+  statusColor, 
+  statusLetter, 
+  flattenPaths 
+} from "./components/utils";
 
 const SUGGESTED_PROMPTS = [
   "Set up the project structure",
@@ -96,190 +68,10 @@ const SUGGESTED_PROMPTS = [
   "Fix the last error",
 ];
 
-function normalizePath(path: string): string {
-  return path.replace(/^\/+/, "").replace(/\/+/g, "/").trim();
-}
-
-function applyGitStatus(
-  nodes: FileNode[],
-  statuses: Record<string, string>
-): FileNode[] {
-  return nodes.map((node) => {
-    if (node.type === "file") {
-      return { ...node, status: (statuses[node.path] as FileStatus) || undefined };
-    }
-    return {
-      ...node,
-      children: node.children ? applyGitStatus(node.children, statuses) : undefined,
-    };
-  });
-}
-
-function getLanguageFromPath(path: string): string {
-  const ext = path.split(".").pop()?.toLowerCase() || "";
-  const map: Record<string, string> = {
-    ts: "typescript", tsx: "typescript", js: "javascript", jsx: "javascript",
-    py: "python", json: "json", md: "markdown", css: "css", html: "html",
-    sh: "shell", yaml: "yaml", yml: "yaml", toml: "toml", rs: "rust",
-    go: "go", java: "java", cpp: "cpp", c: "c",
-  };
-  return map[ext] || "plaintext";
-}
-
-function getFileNameFromPath(path: string | null): string {
-  if (!path) return "No file selected";
-  const parts = path.split("/");
-  return parts[parts.length - 1] || path;
-}
-
-function getTabLabel(path: string, allOpenPaths: string[]): string {
-  const name = getFileNameFromPath(path);
-  const dupes = allOpenPaths.filter((p) => getFileNameFromPath(p) === name);
-  if (dupes.length <= 1) return name;
-  const parts = path.split("/");
-  const parent = parts.length > 1 ? parts[parts.length - 2] : "";
-  return parent ? `${parent}/${name}` : name;
-}
-
-function statusColor(status?: FileStatus): string {
-  switch (status) {
-    case "modified":
-      return "text-yellow-500";
-    case "untracked":
-      return "text-green-500";
-    case "staged":
-      return "text-blue-400";
-    case "deleted":
-      return "text-red-500";
-    default:
-      return "";
-  }
-}
-
-function statusLetter(status?: FileStatus): string {
-  switch (status) {
-    case "modified":
-      return "M";
-    case "untracked":
-      return "U";
-    case "staged":
-      return "A";
-    case "deleted":
-      return "D";
-    default:
-      return "";
-  }
-}
-
-function FileNodeItem({
-  node,
-  depth = 0,
-  selectedPath,
-  onFileClick,
-  onCreateFile,
-  onCreateFolder,
-  onRename,
-  onDelete,
-  onContextMenu,
-}: {
-  node: FileNode;
-  depth?: number;
-  selectedPath: string | null;
-  onFileClick: (path: string) => void;
-  onCreateFile: (parentPath?: string) => void;
-  onCreateFolder: (parentPath?: string) => void;
-  onRename: (path: string, currentName: string) => void;
-  onDelete: (path: string) => void;
-  onContextMenu: (e: React.MouseEvent, node: FileNode) => void;
-}) {
-  const [isOpen, setIsOpen] = useState(node.type === "directory" && depth === 0);
-
-  if (node.type === "directory") {
-    return (
-      <div className="group">
-        <div
-          className="flex items-center justify-between w-full hover:bg-gray-800/50 rounded-sm pr-1 transition-colors group/row"
-          onContextMenu={(e) => onContextMenu(e, node)}
-        >
-          <button
-            onClick={() => setIsOpen(!isOpen)}
-            className="flex items-center gap-1.5 flex-1 min-w-0 text-left py-1 px-1.5 text-text-primary text-xs truncate"
-            style={{ paddingLeft: `${8 + depth * 12}px` }}
-          >
-            <span className={`transition-transform text-text-muted text-[9px] shrink-0 ${isOpen ? "rotate-90" : ""}`}>▶</span>
-            <Folder size={13} className="text-yellow-400 shrink-0" />
-            <span className="truncate font-normal">{node.name}</span>
-          </button>
-          <div className="opacity-0 group-hover/row:opacity-100 flex items-center gap-0.5 shrink-0 transition-opacity">
-            <button onClick={(e) => { e.stopPropagation(); onCreateFile(node.path); }} title="New File" className="p-1 text-text-muted hover:text-text-primary hover:bg-surface-hover rounded transition-colors"><FilePlus size={12} /></button>
-            <button onClick={(e) => { e.stopPropagation(); onCreateFolder(node.path); }} title="New Folder" className="p-1 text-text-muted hover:text-text-primary hover:bg-surface-hover rounded transition-colors"><FolderPlus size={12} /></button>
-            <button onClick={(e) => { e.stopPropagation(); onRename(node.path, node.name); }} title="Rename" className="p-1 text-text-muted hover:text-text-primary hover:bg-surface-hover rounded transition-colors"><Edit3 size={12} /></button>
-            <button onClick={(e) => { e.stopPropagation(); onDelete(node.path); }} title="Delete" className="p-1 text-text-muted hover:text-red-500 hover:bg-surface-hover rounded transition-colors"><Trash2 size={12} /></button>
-          </div>
-        </div>
-        {isOpen && node.children && (
-          <div>
-            {node.children.map((child) => (
-              <FileNodeItem
-                key={child.path}
-                node={child}
-                depth={depth + 1}
-                selectedPath={selectedPath}
-                onFileClick={onFileClick}
-                onCreateFile={onCreateFile}
-                onCreateFolder={onCreateFolder}
-                onRename={onRename}
-                onDelete={onDelete}
-                onContextMenu={onContextMenu}
-              />
-            ))}
-          </div>
-        )}
-      </div>
-    );
-  }
-
-  const isSelected = selectedPath === node.path;
-  const iconColor = fileIconColor(node.name);
-  return (
-    <div
-      className={`flex items-center justify-between w-full py-1 px-1.5 rounded-sm text-xs group/row transition-colors ${
-        isSelected ? "bg-accent/20 text-accent font-medium" : "hover:bg-surface-hover text-text-secondary"
-      }`}
-      style={{ paddingLeft: `${8 + depth * 12}px` }}
-      onContextMenu={(e) => onContextMenu(e, node)}
-    >
-      <button
-        onClick={() => onFileClick(node.path)}
-        className="flex items-center gap-1.5 flex-1 min-w-0 text-left truncate pr-1"
-      >
-        <FileCode size={13} className={`shrink-0 ${isSelected ? "text-blue-400" : iconColor}`} />
-        <span className="truncate">{node.name}</span>
-        {node.status && (
-          <span className={`ml-1 text-[10px] font-bold shrink-0 ${statusColor(node.status)}`}>
-            {statusLetter(node.status)}
-          </span>
-        )}
-      </button>
-      <div className="opacity-0 group-hover/row:opacity-100 flex items-center gap-0.5 shrink-0 transition-opacity">
-        <button onClick={(e) => { e.stopPropagation(); onRename(node.path, node.name); }} title="Rename" className="p-1 text-text-muted hover:text-text-primary hover:bg-surface-hover rounded transition-colors"><Edit3 size={12} /></button>
-        <button onClick={(e) => { e.stopPropagation(); onDelete(node.path); }} title="Delete" className="p-1 text-text-muted hover:text-red-500 hover:bg-surface-hover rounded transition-colors"><Trash2 size={12} /></button>
-      </div>
-    </div>
-  );
-}
-
 // ---------------------------------------------------------------------------
 // Flat list of all file paths for the fuzzy file finder
 // ---------------------------------------------------------------------------
-function flattenPaths(nodes: FileNode[]): string[] {
-  const out: string[] = [];
-  for (const n of nodes) {
-    if (n.type === "file") out.push(n.path);
-    if (n.children) out.push(...flattenPaths(n.children));
-  }
-  return out;
-}
+// ---------------------------------------------------------------------------
 
 
 export default function WorkspacePage() {
@@ -307,11 +99,17 @@ export default function WorkspacePage() {
   const [chatInput, setChatInput] = useState("");
   const [chatImages, setChatImages] = useState<string[]>([]);
   const [isTyping, setIsTyping] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
   // Current agent name shown in the navbar pill (parsed from latest activity)
   const [currentAgentLabel, setCurrentAgentLabel] = useState<string | null>(null);
 
   const [editorLanguage, setEditorLanguage] = useState("markdown");
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
+  
+  // Split Editor State
+  const [isSplitMode, setIsSplitMode] = useState(false);
+  const [secondarySelectedFile, setSecondarySelectedFile] = useState<string | null>(null);
+  const [activeEditorPane, setActiveEditorPane] = useState<"primary" | "secondary">("primary");
   
   const [diffFile, setDiffFile] = useState<string | null>(null);
 
@@ -326,12 +124,13 @@ export default function WorkspacePage() {
   const [terminals, setTerminals] = useState<TerminalSession[]>([]);
   const [activeTerminalId, setActiveTerminalId] = useState<string | null>(null);
   const [isTerminalMaximized, setIsTerminalMaximized] = useState(false);
-  // Map from terminal tab id → a function the IDETerminal component exposes to clear its output
-  const terminalClearFns = useRef<Map<string, () => void>>(new Map());
+  // Map from terminal tab id → terminal actions exposed by IDETerminal
+  const terminalActions = useRef<Map<string, { clear: () => void; getContent: () => string }>>(new Map());
 
   // Monaco editor instance and per-file model registry
   const monacoRef = useRef<typeof Monaco | null>(null);
   const editorRef = useRef<Monaco.editor.IStandaloneCodeEditor | null>(null);
+  const secondaryEditorRef = useRef<Monaco.editor.IStandaloneCodeEditor | null>(null);
   const monacoModels = useRef<Map<string, Monaco.editor.ITextModel>>(new Map());
 
   // Right-click context menu
@@ -357,6 +156,15 @@ export default function WorkspacePage() {
   const [inlineEditPrompt, setInlineEditPrompt] = useState("");
   const [inlineEditSelection, setInlineEditSelection] = useState<Monaco.Selection | null>(null);
   const [isInlineEditing, setIsInlineEditing] = useState(false);
+
+  // Problems Panel State
+  const [problems, setProblems] = useState<Monaco.editor.IMarker[]>([]);
+  const [bottomTab, setBottomTab] = useState<"terminal" | "problems">("terminal");
+
+  // Status bar cursor position
+  const [cursorPosition, setCursorPosition] = useState({ line: 1, column: 1 });
+  // Current git branch name
+  const [gitBranch, setGitBranch] = useState<string | null>(null);
 
   // File action modal state (New File / New Folder / Rename / Delete)
   const [fileActionModal, setFileActionModal] = useState<{
@@ -431,6 +239,12 @@ export default function WorkspacePage() {
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [isIndexing, setIsIndexing] = useState(false);
   const [isRunning, setIsRunning] = useState(false);
+  // Phase 5: AI Code Review
+  const [isReviewing, setIsReviewing] = useState(false);
+  // Zen mode (distraction-free)
+  const [isZenMode, setIsZenMode] = useState(false);
+  // Editor font size
+  const [editorFontSize, setEditorFontSize] = useState(14);
 
   /* ── Close context menu on any outside click ── */
   useEffect(() => {
@@ -713,6 +527,12 @@ export default function WorkspacePage() {
       if (e.key === "Escape") {
         setIsCommandPaletteOpen(false);
         setIsShortcutsOpen(false);
+        setIsZenMode(false);
+      }
+      // Ctrl+K Z → Zen Mode
+      if ((e.ctrlKey || e.metaKey) && e.key === "z" && !e.shiftKey && !isEditing) {
+        e.preventDefault();
+        setIsZenMode((v) => !v);
       }
     };
     window.addEventListener("keydown", onKeyDown);
@@ -768,7 +588,7 @@ export default function WorkspacePage() {
       const newSessionId: string = json.session_id;
 
       // Remove the clear fn for the old tab since its xterm instance will remount
-      terminalClearFns.current.delete(oldId);
+      terminalActions.current.delete(oldId);
 
       setTerminals((prev) =>
         prev.map((t) => (t.id === oldId ? { ...t, sessionId: newSessionId } : t))
@@ -788,7 +608,7 @@ export default function WorkspacePage() {
   };
 
   const closeTerminal = (id: string) => {
-    terminalClearFns.current.delete(id);
+    terminalActions.current.delete(id);
     setTerminals((prev) => {
       const remaining = prev.filter((t) => t.id !== id);
       if (activeTerminalId === id) {
@@ -800,8 +620,30 @@ export default function WorkspacePage() {
 
   const clearActiveTerminal = () => {
     if (!activeTerminalId) return;
-    const clearFn = terminalClearFns.current.get(activeTerminalId);
-    if (clearFn) clearFn();
+    const actions = terminalActions.current.get(activeTerminalId);
+    if (actions) actions.clear();
+  };
+
+  const handleDebugTerminal = () => {
+    if (!activeTerminalId) return;
+    const actions = terminalActions.current.get(activeTerminalId);
+    if (!actions) return;
+    
+    const rawContent = actions.getContent();
+    // Grab the last 2000 chars roughly to avoid token bloat
+    const contentToAnalyze = rawContent.slice(-2000);
+    
+    if (!contentToAnalyze.trim()) {
+      error("Terminal is empty.");
+      return;
+    }
+    
+    // Ensure chat panel is open
+    const panel = chatPanelRef.current;
+    if (panel && panel.isCollapsed()) panel.expand();
+    setIsChatCollapsed(false);
+    
+    sendPrompt(`I encountered an error in my terminal. Can you analyze this output and provide a fix?\n\n\`\`\`\n${contentToAnalyze}\n\`\`\``);
   };
 
   const sendPrompt = async (text: string) => {
@@ -912,6 +754,44 @@ export default function WorkspacePage() {
     }
   };
 
+  const toggleRecording = useCallback(() => {
+    if (isRecording) {
+      setIsRecording(false);
+      return;
+    }
+    
+    // @ts-ignore
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      error("Speech recognition is not supported in your browser.");
+      return;
+    }
+
+    const recognition = new SpeechRecognition();
+    recognition.continuous = false;
+    recognition.interimResults = false;
+
+    recognition.onstart = () => setIsRecording(true);
+    recognition.onresult = (event: any) => {
+      const transcript = event.results[0][0].transcript;
+      setChatInput((prev) => prev ? `${prev} ${transcript}` : transcript);
+      setIsRecording(false);
+    };
+    recognition.onerror = (event: any) => {
+      console.error("Speech recognition error", event.error);
+      setIsRecording(false);
+      error("Speech recognition failed: " + event.error);
+    };
+    recognition.onend = () => setIsRecording(false);
+
+    try {
+      recognition.start();
+    } catch (err) {
+      console.error(err);
+      setIsRecording(false);
+    }
+  }, [isRecording, error]);
+
   const handleSendMessage = async () => {
     if (!chatInput.trim()) return;
     await sendPrompt(chatInput);
@@ -927,16 +807,24 @@ export default function WorkspacePage() {
   const handleFileClick = async (filePath: string) => {
     const path = normalizePath(filePath);
 
-    setSelectedFile(path);
-    setEditorLanguage(getLanguageFromPath(path));
+    if (activeEditorPane === "primary") {
+      setSelectedFile(path);
+      setEditorLanguage(getLanguageFromPath(path));
+    } else {
+      setSecondarySelectedFile(path);
+    }
 
     // Already have content in state -> just switch model
     if (fileContents[path] !== undefined) {
       openTab(path);
       // Switch Monaco model immediately if editor is mounted
       const model = monacoModels.current.get(path);
-      if (editorRef.current && model) {
-        editorRef.current.setModel(model);
+      if (model) {
+        if (activeEditorPane === "primary" && editorRef.current) {
+          editorRef.current.setModel(model);
+        } else if (activeEditorPane === "secondary" && secondaryEditorRef.current) {
+          secondaryEditorRef.current.setModel(model);
+        }
       }
       return;
     }
@@ -960,10 +848,14 @@ export default function WorkspacePage() {
         let model = monacoRef.current.editor.getModel(uri);
         if (!model) {
           model = monacoRef.current.editor.createModel(content, lang, uri);
+        } else {
+          model.setValue(content);
         }
         monacoModels.current.set(path, model);
-        if (editorRef.current) {
+        if (activeEditorPane === "primary" && editorRef.current) {
           editorRef.current.setModel(model);
+        } else if (activeEditorPane === "secondary" && secondaryEditorRef.current) {
+          secondaryEditorRef.current.setModel(model);
         }
       }
 
@@ -975,7 +867,131 @@ export default function WorkspacePage() {
     }
   };
 
- 
+  const handleInlineEditSubmit = async () => {
+    if (!inlineEditPrompt.trim() || !inlineEditSelection || !editorRef.current || !selectedFile) return;
+    setIsInlineEditing(true);
+    
+    const editor = editorRef.current;
+    const model = editor.getModel();
+    if (!model) return;
+    
+    const selectedText = model.getValueInRange(inlineEditSelection);
+    
+    try {
+      const res = await fetch(`${apiBaseUrl}/projects/${projectId}/chat/stream`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          messages: [
+            { role: "system", content: "You are an inline AI code editor. Return ONLY the raw modified code to replace the user's selection based on their prompt. Do not use markdown blocks, backticks, or conversational text. Just the code." },
+            { role: "user", content: `Code:\n${selectedText}\n\nPrompt: ${inlineEditPrompt}` }
+          ],
+          model: project?.llm_model || "gpt-4o",
+          temperature: 0.2,
+          project_id: projectId,
+        }),
+      });
+
+      if (!res.body) throw new Error("No body");
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      
+      let buffer = "";
+      let newText = "";
+      let editRange = inlineEditSelection;
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n\n");
+        buffer = lines.pop() || "";
+        for (const line of lines) {
+          if (line.startsWith("data: ")) {
+            const dataStr = line.slice(6);
+            if (!dataStr.trim() || dataStr.trim() === "[DONE]") continue;
+            try {
+              const parsed = JSON.parse(dataStr);
+              if (parsed.type === "token") {
+                const token = parsed.content;
+                newText += token;
+                
+                if (monacoRef.current) {
+                  editor.executeEdits("ai-inline", [{
+                    range: editRange,
+                    text: newText,
+                    forceMoveMarkers: true
+                  }]);
+                  
+                  const startOffset = model.getOffsetAt(inlineEditSelection.getStartPosition());
+                  const endPos = model.getPositionAt(startOffset + newText.length);
+                  editRange = new monacoRef.current.Range(
+                    inlineEditSelection.startLineNumber,
+                    inlineEditSelection.startColumn,
+                    endPos.lineNumber,
+                    endPos.column
+                  );
+                }
+              }
+            } catch (e) {
+              // Ignore parse errors for partial chunks
+            }
+          }
+        }
+      }
+      
+      setFileContents((prev) => ({ ...prev, [selectedFile]: model.getValue() }));
+      setDirtyTabs((prev) => new Set([...prev, selectedFile]));
+
+    } catch (error) {
+      console.error("Inline edit failed:", error);
+    } finally {
+      setIsInlineEditing(false);
+      setIsInlineEditOpen(false);
+      setInlineEditPrompt("");
+    }
+  };
+
+  const handleCodeReview = async () => {
+    if (isReviewing) return;
+    if (Object.keys(fileContents).length === 0) {
+      error("Open some files first before running a code review.");
+      return;
+    }
+    setIsReviewing(true);
+    // Ensure chat panel is open
+    const panel = chatPanelRef.current;
+    if (panel && panel.isCollapsed()) panel.expand();
+    setIsChatCollapsed(false);
+
+    // Build a summary of the open files
+    const fileSummaries = Object.entries(fileContents)
+      .slice(0, 5) // limit to first 5 open files to avoid token overflow
+      .map(([path, content]) => {
+        const preview = content.slice(0, 1500);
+        return `### ${path}\n\`\`\`\n${preview}${content.length > 1500 ? "\n... (truncated)" : ""}\n\`\`\``;
+      })
+      .join("\n\n");
+
+    const prompt = `Please perform a **proactive code review** on my open files. For each file, identify:
+1. 🐛 **Bugs** or potential runtime errors
+2. ⚡ **Performance** improvements
+3. 🔒 **Security** concerns
+4. 🧹 **Code quality** issues (dead code, complexity, naming)
+5. ✅ **Quick wins** — improvements I can make in under 5 minutes
+
+Here are my open files:
+
+${fileSummaries}
+
+Provide actionable, specific suggestions for each issue you find.`;
+
+    try {
+      await sendPrompt(prompt);
+    } finally {
+      setIsReviewing(false);
+    }
+  };
 
   useEffect(() => {
     const fetchProject = async () => {
@@ -1045,6 +1061,31 @@ export default function WorkspacePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
 
+  // Poll for Monaco markers (diagnostics) and fetch git branch
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (monacoRef.current && editorRef.current) {
+        const markers = monacoRef.current.editor.getModelMarkers({});
+        setProblems(markers);
+      }
+    }, 2000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Fetch current git branch on mount and every 15s
+  useEffect(() => {
+    if (!projectId) return;
+    const fetchBranch = () => {
+      fetch(`${apiBaseUrl}/projects/${projectId}/git/branch`)
+        .then((r) => r.json())
+        .then((json) => { if (json.success && json.data?.branch) setGitBranch(json.data.branch); })
+        .catch(() => {});
+    };
+    fetchBranch();
+    const branchPoll = setInterval(fetchBranch, 15000);
+    return () => clearInterval(branchPoll);
+  }, [projectId]);
+
   if (isLoading) {
     return (
       <div className="h-screen bg-gray-50 dark:bg-black flex items-center justify-center">
@@ -1066,7 +1107,7 @@ export default function WorkspacePage() {
   }
 
   return (
-    <div {...getRootProps()} className="h-screen flex flex-col bg-background text-foreground overflow-hidden font-sans relative">
+    <div {...getRootProps()} className={`h-screen flex flex-col bg-background text-foreground overflow-hidden font-sans relative${isZenMode ? " zen-mode" : ""}`}>
       <input {...getInputProps()} />
       {/* Drag & Drop Overlay */}
       {isDragActive && (
@@ -1097,7 +1138,7 @@ export default function WorkspacePage() {
       `}</style>
 
       {/* Top Navbar */}
-      <header className="h-14 border-b border-border-subtle bg-surface-1 flex items-center justify-between px-4 shrink-0">
+      <header className="h-14 border-b border-border-subtle glass flex items-center px-4 shrink-0 justify-between z-10 sticky top-0">
         <div className="flex items-center gap-4">
           <Link href="/projects" className="text-gray-500 hover:text-gray-900 dark:hover:text-white transition-colors">
             <ArrowLeft size={18} />
@@ -1170,6 +1211,25 @@ export default function WorkspacePage() {
               <PanelRight size={15} />
             </button>
           </div>
+
+          {/* Phase 5: AI Code Review */}
+          <button
+            onClick={handleCodeReview}
+            disabled={isReviewing}
+            title="AI Code Review — scan open files for bugs & improvements"
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+              isReviewing
+                ? "bg-purple-600/20 text-purple-400 cursor-not-allowed"
+                : "bg-purple-600/10 text-purple-400 hover:bg-purple-600/20 hover:text-purple-300"
+            }`}
+          >
+            {isReviewing ? (
+              <Loader2 size={13} className="animate-spin" />
+            ) : (
+              <Brain size={13} className={isReviewing ? "" : ""} />
+            )}
+            {isReviewing ? "Reviewing..." : "Code Review"}
+          </button>
 
           {/* Feature 7: Run project */}
           <button
@@ -1247,12 +1307,18 @@ export default function WorkspacePage() {
               onExpand={() => setIsChatCollapsed(false)}
             >
               {/* Left Panel: Chat Interface */}
-              <aside className="h-full border-r border-border-subtle bg-surface-1 flex flex-col">
-                <div className="h-12 border-b border-gray-200 dark:border-gray-800 flex items-center px-4">
+              <aside className="h-full border-r border-border-subtle glass flex flex-col">
+                <div className="h-12 border-b border-gray-200 dark:border-gray-800 flex items-center px-4 gap-3">
                   <h2 className="text-sm font-semibold flex items-center gap-2">
                     <MessageSquare size={16} />
                     AI Assistant
                   </h2>
+                  {isReviewing && (
+                    <span className="ml-auto flex items-center gap-1.5 text-[10px] text-purple-400 animate-pulse">
+                      <Brain size={11} />
+                      Reviewing code...
+                    </span>
+                  )}
                 </div>
                 <div className="flex-1 overflow-y-auto p-4 space-y-4 scroll-smooth">
                   {messages.map((msg) => (
@@ -1281,33 +1347,7 @@ export default function WorkspacePage() {
                             remarkPlugins={[remarkGfm]}
                             components={{
                               code({ node, className, children, ...props }: any) {
-                                const match = /language-(\w+)/.exec(className || "");
-                                const isInline = !className && !String(children).includes("\n");
-
-                                return !isInline && match ? (
-                                  <div className="mt-2 mb-2 rounded-md overflow-hidden border border-gray-700">
-                                    <div className="bg-gray-800 text-gray-400 text-xs px-3 py-1 flex justify-between">
-                                      <span>{match[1]}</span>
-                                    </div>
-                                    <SyntaxHighlighter
-                                      style={vscDarkPlus as any}
-                                      language={match[1]}
-                                      PreTag="div"
-                                      customStyle={{ margin: 0, borderRadius: 0 }}
-                                      {...props}
-                                    >
-                                      {String(children).replace(/\n$/, "")}
-                                    </SyntaxHighlighter>
-                                  </div>
-                                ) : (
-                                  <code
-                                    className={`px-1 py-0.5 rounded-md ${msg.role === "user" ? "bg-purple-700" : "bg-gray-200 dark:bg-gray-700"
-                                      } ${className || ""}`}
-                                    {...props}
-                                  >
-                                    {children}
-                                  </code>
-                                );
+                                return <CodeBlock className={className} {...props}>{children}</CodeBlock>;
                               },
                             }}
                           >
@@ -1452,6 +1492,15 @@ export default function WorkspacePage() {
                       />
                     </label>
                     <button
+                      onClick={toggleRecording}
+                      title="Dictate message"
+                      className={`absolute right-12 bottom-3 p-1.5 rounded-lg transition-colors ${
+                        isRecording ? "bg-red-500 text-white animate-pulse" : "text-gray-400 hover:text-white"
+                      }`}
+                    >
+                      <Mic size={16} />
+                    </button>
+                    <button
                       onClick={handleSendMessage}
                       disabled={(!chatInput.trim() && chatImages.length === 0) || isTyping}
                       className="absolute right-3 bottom-3 p-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:hover:bg-blue-600 text-white rounded-lg transition-colors"
@@ -1459,6 +1508,26 @@ export default function WorkspacePage() {
                       <Send size={16} />
                     </button>
                   </div>
+                </div>
+
+                {/* Quick Action Prompt Buttons */}
+                <div className="px-3 pb-3 flex flex-wrap gap-1.5">
+                  {[
+                    { label: "✨ Explain file", prompt: selectedFile ? `Explain what the file \`${selectedFile}\` does, its purpose, and key concepts.` : "Explain what this project does." },
+                    { label: "🧪 Add tests", prompt: selectedFile ? `Write comprehensive unit tests for \`${selectedFile}\`. Include edge cases.` : "Write unit tests for the main functionality of this project." },
+                    { label: "📝 Add types", prompt: selectedFile ? `Add TypeScript types and interfaces to \`${selectedFile}\` wherever they are missing.` : "Add TypeScript types to all files that are missing them." },
+                    { label: "⚡ Optimize", prompt: selectedFile ? `Review \`${selectedFile}\` and suggest performance optimizations.` : "Suggest performance optimizations for this project." },
+                    { label: "📚 Add docs", prompt: selectedFile ? `Add JSDoc/docstring comments to all functions and classes in \`${selectedFile}\`.` : "Add documentation comments to the main functions in this project." },
+                  ].map(({ label, prompt }) => (
+                    <button
+                      key={label}
+                      onClick={() => sendPrompt(prompt)}
+                      disabled={isTyping}
+                      className="px-2 py-1 rounded-lg bg-surface-2 hover:bg-surface-hover border border-border-subtle text-[10px] text-text-secondary hover:text-text-primary transition-all disabled:opacity-40 whitespace-nowrap"
+                    >
+                      {label}
+                    </button>
+                  ))}
                 </div>
               </aside>
             </Panel>
@@ -1547,7 +1616,6 @@ export default function WorkspacePage() {
                     );
                   })}
                   
-                  {/* Web Preview Tab (fake path) */}
                   <div
                       onClick={() => setSelectedFile("__preview__")}
                       title="Web Preview"
@@ -1560,78 +1628,254 @@ export default function WorkspacePage() {
                     <span className="text-sm">Preview</span>
                   </div>
 
+                  {/* Split button — pinned to far right */}
+                  <div className="ml-auto flex items-center border-l border-border-subtle px-1 shrink-0">
+                    {isSplitMode ? (
+                      <button
+                        onClick={() => { setIsSplitMode(false); setSecondarySelectedFile(null); setActiveEditorPane("primary"); }}
+                        title="Close split view"
+                        className="p-1.5 rounded text-accent hover:bg-accent/10 transition-colors"
+                      >
+                        <X size={13} />
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => { setIsSplitMode(true); setSecondarySelectedFile(selectedFile); setActiveEditorPane("secondary"); }}
+                        title="Split editor right"
+                        className="p-1.5 rounded text-text-muted hover:text-text-primary hover:bg-surface-hover transition-colors"
+                      >
+                        <SplitSquareHorizontal size={13} />
+                      </button>
+                    )}
+                  </div>
+
                 </div>
-                <div className="flex-1 relative overflow-hidden">
-                  {selectedFile === "__preview__" ? (
-                    <PreviewPanel defaultPort={3000} />
-                  ) : selectedFile ? (
-                    <Editor
-                      height="100%"
-                      language={editorLanguage}
-                      theme="vs-dark"
-                      value={fileContents[selectedFile] || ""}
-                      onChange={(value) => {
-                        if (!selectedFile) return;
-                        setFileContents((prev) => ({ ...prev, [selectedFile]: value || "" }));
-                        // Mark tab as dirty
-                        setDirtyTabs((prev) => new Set([...prev, selectedFile]));
-                      }}
-                      options={{
-                        minimap: { enabled: false },
-                        fontSize: 14,
-                        wordWrap: "on",
-                        lineNumbers: "on",
-                        scrollBeyondLastLine: false,
-                        padding: { top: 16 },
-                        fontFamily: "var(--font-mono)",
-                        // smooth cursor animation
-                        cursorSmoothCaretAnimation: "on",
-                        smoothScrolling: true,
-                        // Better tab rendering
-                        renderWhitespace: "selection",
-                      }}
-                      onMount={(editor, monaco) => {
-                        editorRef.current = editor;
-                        monacoRef.current = monaco;
 
-                        // Create initial model for the already-selected file
-                        if (selectedFile && fileContents[selectedFile] !== undefined) {
-                          const uri = monaco.Uri.file(selectedFile);
-                          let model = monaco.editor.getModel(uri);
-                          if (!model) {
-                            model = monaco.editor.createModel(
-                              fileContents[selectedFile],
-                              getLanguageFromPath(selectedFile),
-                              uri
-                            );
+                {/* Breadcrumb bar */}
+                {selectedFile && selectedFile !== "__preview__" && (
+                  <div className="h-7 bg-surface-1 border-b border-border-subtle flex items-center px-3 gap-1 text-[11px] text-text-muted shrink-0 overflow-x-auto no-scrollbar">
+                    {selectedFile.split("/").map((segment, i, arr) => (
+                      <React.Fragment key={i}>
+                        {i < arr.length - 1 ? (
+                          <>
+                            <span className="hover:text-text-primary cursor-pointer transition-colors">{segment}</span>
+                            <span className="text-border-subtle mx-0.5 select-none">/</span>
+                          </>
+                        ) : (
+                          <span className="text-text-primary font-medium">{segment}</span>
+                        )}
+                      </React.Fragment>
+                    ))}
+                    {dirtyTabs.has(selectedFile) && (
+                      <span className="ml-1.5 text-yellow-400 text-[9px] font-bold">● UNSAVED</span>
+                    )}
+                  </div>
+                )}
+
+                <div className="flex-1 relative overflow-hidden flex">
+                  {/* Primary editor pane */}
+                  <div
+                    className={`relative overflow-hidden flex-1 ${isSplitMode ? "border-r border-border-subtle" : ""}`}
+                    onClick={() => setActiveEditorPane("primary")}
+                  >
+                    {isSplitMode && (
+                      <div className={`absolute top-0 left-0 right-0 h-0.5 z-10 transition-all ${activeEditorPane === "primary" ? "bg-accent" : "bg-transparent"}`} />
+                    )}
+                    {selectedFile === "__preview__" ? (
+                      <PreviewPanel defaultPort={3000} />
+                    ) : selectedFile ? (
+                      <Editor
+                        height="100%"
+                        language={editorLanguage}
+                        theme="vs-dark"
+                        value={fileContents[selectedFile] || ""}
+                        onChange={(value) => {
+                          if (!selectedFile) return;
+                          setFileContents((prev) => ({ ...prev, [selectedFile]: value || "" }));
+                          setDirtyTabs((prev) => new Set([...prev, selectedFile]));
+                        }}
+                        options={{
+                          minimap: { enabled: false },
+                          fontSize: editorFontSize,
+                          wordWrap: "on",
+                          lineNumbers: "on",
+                          scrollBeyondLastLine: false,
+                          padding: { top: 16 },
+                          fontFamily: "var(--font-mono)",
+                          cursorSmoothCaretAnimation: "on",
+                          smoothScrolling: true,
+                          renderWhitespace: "selection",
+                          automaticLayout: true,
+                        }}
+                        onMount={(editor, monaco) => {
+                          editorRef.current = editor;
+                          monacoRef.current = monaco;
+
+                          // Track cursor position for status bar
+                          editor.onDidChangeCursorPosition((e) => {
+                            setCursorPosition({ line: e.position.lineNumber, column: e.position.column });
+                          });
+
+                          if (selectedFile && fileContents[selectedFile] !== undefined) {
+                            const uri = monaco.Uri.file(selectedFile);
+                            let model = monaco.editor.getModel(uri);
+                            if (!model) {
+                              model = monaco.editor.createModel(
+                                fileContents[selectedFile],
+                                getLanguageFromPath(selectedFile),
+                                uri
+                              );
+                            } else {
+                              model.setValue(fileContents[selectedFile]);
+                            }
+                            monacoModels.current.set(selectedFile, model);
+                            editor.setModel(model);
                           }
-                          monacoModels.current.set(selectedFile, model);
-                          editor.setModel(model);
-                        }
 
-                        const sendSelectionToAI = (promptPrefix: string) => {
-                          const selection = editor.getModel()?.getValueInRange(editor.getSelection()!);
-                          if (selection && selection.trim()) {
-                            sendPrompt(`${promptPrefix} from ${selectedFile}:\n\`\`\`\n${selection}\n\`\`\``);
-                            const panel = chatPanelRef.current;
-                            if (panel && panel.isCollapsed()) panel.expand();
-                          }
-                        };
+                          const sendSelectionToAI = (promptPrefix: string) => {
+                            const selection = editor.getModel()?.getValueInRange(editor.getSelection()!);
+                            if (selection && selection.trim()) {
+                              sendPrompt(`${promptPrefix} from ${selectedFile}:\n\`\`\`\n${selection}\n\`\`\``);
+                              const panel = chatPanelRef.current;
+                              if (panel && panel.isCollapsed()) panel.expand();
+                            }
+                          };
 
-                        editor.addAction({ id: "ai-explain", label: "AI: Explain Code", contextMenuGroupId: "navigation", contextMenuOrder: 1, run: () => sendSelectionToAI("Explain this code") });
-                        editor.addAction({ id: "ai-refactor", label: "AI: Refactor Code", contextMenuGroupId: "navigation", contextMenuOrder: 2, run: () => sendSelectionToAI("Refactor this code to be cleaner and more robust") });
-                        editor.addAction({ id: "ai-fix", label: "AI: Fix Bugs", contextMenuGroupId: "navigation", contextMenuOrder: 3, run: () => sendSelectionToAI("Find and fix any bugs in this code") });
-                        editor.addAction({ id: "ai-open-diff", label: "AI: View Diff", contextMenuGroupId: "navigation", contextMenuOrder: 4, run: () => { if (selectedFile) setDiffFile(selectedFile); } });
-                      }}
-                      loading={<div className="p-6 text-gray-500">Loading editor...</div>}
-                    />
-                  ) : (
-                    <div className="h-full flex flex-col items-center justify-center text-center px-8">
-                      <FileCode size={40} className="text-gray-700 mb-3" />
-                      <p className="text-sm text-gray-500 mb-1">No file open</p>
-                      <p className="text-xs text-gray-600 max-w-xs">
-                        Select a file from the repository panel, or ask the AI agent to create one for you.
-                      </p>
+                          editor.addAction({ id: "ai-explain", label: "AI: Explain Code", contextMenuGroupId: "navigation", contextMenuOrder: 1, run: () => sendSelectionToAI("Explain this code") });
+                          editor.addAction({ id: "ai-refactor", label: "AI: Refactor Code", contextMenuGroupId: "navigation", contextMenuOrder: 2, run: () => sendSelectionToAI("Refactor this code to be cleaner and more robust") });
+                          editor.addAction({ id: "ai-fix", label: "AI: Fix Bugs", contextMenuGroupId: "navigation", contextMenuOrder: 3, run: () => sendSelectionToAI("Find and fix any bugs in this code") });
+                          editor.addAction({ id: "ai-open-diff", label: "AI: View Diff", contextMenuGroupId: "navigation", contextMenuOrder: 4, run: () => { if (selectedFile) setDiffFile(selectedFile); } });
+                          editor.addAction({
+                            id: "ai-inline-edit",
+                            label: "AI: Inline Edit",
+                            keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyK],
+                            contextMenuGroupId: "navigation",
+                            contextMenuOrder: 0,
+                            run: (ed) => {
+                              const selection = ed.getSelection();
+                              if (!selection) return;
+                              const position = ed.getScrolledVisiblePosition(selection.getEndPosition());
+                              if (position) {
+                                setInlineEditPosition({ top: position.top + 30, left: position.left });
+                                setInlineEditSelection(selection);
+                                setIsInlineEditOpen(true);
+                                setTimeout(() => document.getElementById("inline-edit-input")?.focus(), 50);
+                              }
+                            }
+                          });
+                        }}
+                        loading={<div className="p-6 text-gray-500">Loading editor...</div>}
+                      />
+                    ) : (
+                      <div className="h-full flex flex-col items-center justify-center text-center px-8">
+                        <FileCode size={40} className="text-gray-700 mb-3" />
+                        <p className="text-sm text-gray-500 mb-1">No file open</p>
+                        <p className="text-xs text-gray-600 max-w-xs">
+                          Select a file from the repository panel, or ask the AI agent to create one for you.
+                        </p>
+                      </div>
+                    )}
+                    {isInlineEditOpen && (
+                      <div
+                        className="absolute z-50 bg-[#1e1e1e] border border-gray-700 shadow-xl rounded-lg p-2 w-[400px] flex flex-col gap-2 transition-all duration-200"
+                        style={{ top: Math.max(10, inlineEditPosition.top), left: Math.max(10, Math.min(inlineEditPosition.left, 400)) }}
+                      >
+                        <div className="flex items-center gap-2 px-1">
+                          <Sparkles size={14} className="text-purple-400" />
+                          <span className="text-xs font-semibold text-gray-300">Inline AI Edit</span>
+                          <button onClick={() => setIsInlineEditOpen(false)} className="ml-auto text-gray-500 hover:text-gray-300">
+                            <X size={14} />
+                          </button>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <input
+                            id="inline-edit-input"
+                            type="text"
+                            value={inlineEditPrompt}
+                            onChange={(e) => setInlineEditPrompt(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter" && !e.shiftKey) {
+                                e.preventDefault();
+                                handleInlineEditSubmit();
+                              } else if (e.key === "Escape") {
+                                setIsInlineEditOpen(false);
+                              }
+                            }}
+                            disabled={isInlineEditing}
+                            placeholder="What do you want to change?"
+                            className="flex-1 bg-[#252526] border border-gray-700 rounded p-1.5 text-sm text-gray-200 focus:outline-none focus:border-blue-500 disabled:opacity-50"
+                          />
+                          <button
+                            onClick={handleInlineEditSubmit}
+                            disabled={isInlineEditing || !inlineEditPrompt.trim()}
+                            className="bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white rounded p-1.5 transition-colors"
+                          >
+                            {isInlineEditing ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Secondary editor pane (split mode) */}
+                  {isSplitMode && (
+                    <div
+                      className="relative flex-1 overflow-hidden"
+                      onClick={() => setActiveEditorPane("secondary")}
+                    >
+                      <div className={`absolute top-0 left-0 right-0 h-0.5 z-10 transition-all ${activeEditorPane === "secondary" ? "bg-accent" : "bg-transparent"}`} />
+                      {/* Secondary pane header */}
+                      <div className="h-8 bg-surface-1 border-b border-border-subtle flex items-center px-3 gap-2 text-[11px] text-text-muted">
+                        <FileCode size={11} className="shrink-0" />
+                        <span className="truncate flex-1">{secondarySelectedFile ? secondarySelectedFile.split("/").pop() : "No file"}</span>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); setIsSplitMode(false); setSecondarySelectedFile(null); setActiveEditorPane("primary"); }}
+                          className="hover:text-text-primary p-0.5 rounded hover:bg-surface-hover transition-colors"
+                          title="Close split"
+                        >
+                          <X size={11} />
+                        </button>
+                      </div>
+                      {secondarySelectedFile ? (
+                        <Editor
+                          height="calc(100% - 2rem)"
+                          language={getLanguageFromPath(secondarySelectedFile)}
+                          theme="vs-dark"
+                          value={fileContents[secondarySelectedFile] || ""}
+                          onChange={(value) => {
+                            if (!secondarySelectedFile) return;
+                            setFileContents((prev) => ({ ...prev, [secondarySelectedFile]: value || "" }));
+                            setDirtyTabs((prev) => new Set([...prev, secondarySelectedFile]));
+                          }}
+                          options={{
+                            minimap: { enabled: false },
+                            fontSize: 14,
+                            wordWrap: "on",
+                            lineNumbers: "on",
+                            scrollBeyondLastLine: false,
+                            padding: { top: 8 },
+                            fontFamily: "var(--font-mono)",
+                            cursorSmoothCaretAnimation: "on",
+                            smoothScrolling: true,
+                            renderWhitespace: "selection",
+                            automaticLayout: true,
+                          }}
+                          onMount={(editor) => {
+                            secondaryEditorRef.current = editor;
+                            const model = monacoModels.current.get(secondarySelectedFile);
+                            if (model) editor.setModel(model);
+                          }}
+                          loading={<div className="p-6 text-gray-500">Loading editor...</div>}
+                        />
+                      ) : (
+                        <div className="h-full flex flex-col items-center justify-center text-center px-8">
+                          <SplitSquareHorizontal size={36} className="text-gray-700 mb-3" />
+                          <p className="text-sm text-gray-500 mb-1">Split view active</p>
+                          <p className="text-xs text-gray-600 max-w-xs">
+                            Click a file in the sidebar to open it here.
+                          </p>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -1651,7 +1895,7 @@ export default function WorkspacePage() {
               onExpand={() => setIsRepoCollapsed(false)}
             >
               {/* Right Panel: File Explorer + Git */}
-              <aside className="h-full border-l border-border-subtle bg-surface-1 flex flex-col">
+              <aside className="h-full border-l border-border-subtle glass flex flex-col">
                 {/* Tab bar */}
                 <div className="h-10 border-b border-gray-200 dark:border-gray-800 flex items-center shrink-0">
                   <button
@@ -1799,13 +2043,29 @@ export default function WorkspacePage() {
             <div className="h-9 border-b border-border-subtle flex items-center px-1 gap-0.5 overflow-x-auto no-scrollbar flex-shrink-0">
               {/* Terminal tabs */}
               <div className="flex items-center gap-0.5 flex-1 min-w-0 overflow-x-auto no-scrollbar">
+                <div
+                  onClick={() => setBottomTab("problems")}
+                  className={`group flex items-center gap-1.5 px-2.5 py-1 rounded-md cursor-pointer text-[11px] shrink-0 whitespace-nowrap transition-colors ${
+                    bottomTab === "problems"
+                      ? "bg-surface-2 text-text-primary shadow-sm"
+                      : "text-text-secondary hover:text-text-primary hover:bg-surface-hover"
+                  }`}
+                >
+                  <AlertCircle size={10} className={bottomTab === "problems" ? "text-red-400" : "text-text-muted"} />
+                  <span>Problems</span>
+                  {problems.length > 0 && (
+                    <span className="bg-red-500/20 text-red-400 px-1.5 py-0.5 rounded text-[9px] font-bold">{problems.length}</span>
+                  )}
+                </div>
+                <div className="w-px h-4 bg-border-subtle mx-1" />
+
                 {terminals.map((t) => {
                   const isRun = t.id.startsWith("run-");
-                  const isActive = activeTerminalId === t.id;
+                  const isActive = activeTerminalId === t.id && bottomTab === "terminal";
                   return (
                     <div
                       key={t.id}
-                      onClick={() => setActiveTerminalId(t.id)}
+                      onClick={() => { setActiveTerminalId(t.id); setBottomTab("terminal"); }}
                       className={`group flex items-center gap-1.5 px-2.5 py-1 rounded-md cursor-pointer text-[11px] shrink-0 whitespace-nowrap transition-colors ${
                         isActive
                           ? "bg-surface-2 text-text-primary shadow-sm"
@@ -1830,6 +2090,17 @@ export default function WorkspacePage() {
 
               {/* Right-side actions */}
               <div className="flex items-center gap-0.5 flex-shrink-0 ml-auto pl-1">
+                {/* Debug Terminal */}
+                {terminals.length > 0 && bottomTab === "terminal" && (
+                  <button
+                    onClick={handleDebugTerminal}
+                    title="Debug Terminal Errors with AI"
+                    className="p-1.5 flex items-center gap-1.5 rounded bg-accent/10 text-accent hover:bg-accent/20 transition-all font-medium text-[10px]"
+                  >
+                    <Sparkles size={12} />
+                    Debug Terminal
+                  </button>
+                )}
                 {/* New terminal */}
                 <button
                   onClick={createTerminal}
@@ -1883,7 +2154,57 @@ export default function WorkspacePage() {
 
             {/* Terminal content area */}
             <div className="flex-1 overflow-hidden relative">
-              {terminals.length === 0 ? (
+              {bottomTab === "problems" ? (
+                <div className="flex flex-col h-full bg-surface-1 overflow-y-auto p-2 gap-1.5">
+                  {problems.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center h-full text-center gap-2 text-text-muted">
+                      <CheckCircle2 size={24} className="text-green-500/50" />
+                      <p className="text-xs">No problems detected in open files.</p>
+                    </div>
+                  ) : (
+                    problems.map((p, i) => {
+                      const fileName = p.resource.path.split("/").pop();
+                      const isError = p.severity >= 8;
+                      return (
+                        <div key={i} className="flex items-start gap-3 p-2 rounded-lg bg-surface-2 border border-border-subtle group">
+                          <AlertCircle size={14} className={`shrink-0 mt-0.5 ${isError ? "text-red-400" : "text-yellow-400"}`} />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs text-text-primary font-medium">{p.message}</p>
+                            <p className="text-[10px] text-text-muted mt-0.5 flex items-center gap-2">
+                              <span className="font-mono text-text-secondary">{fileName}</span>
+                              <span>Ln {p.startLineNumber}, Col {p.startColumn}</span>
+                            </p>
+                          </div>
+                          <button
+                            onClick={() => {
+                              const fullPath = p.resource.path.replace(/^\//, "");
+                              handleFileClick(fullPath).then(() => {
+                                setTimeout(() => {
+                                  if (editorRef.current && monacoRef.current) {
+                                    const range = new monacoRef.current.Range(p.startLineNumber, p.startColumn, p.endLineNumber, p.endColumn);
+                                    editorRef.current.setSelection(range);
+                                    editorRef.current.revealRangeInCenter(range);
+                                    setInlineEditSelection(range);
+                                    const topPos = editorRef.current.getScrolledVisiblePosition(range.getEndPosition())?.top || 0;
+                                    setInlineEditPosition({ top: topPos + 30, left: 10 });
+                                    setInlineEditPrompt(`Fix this error: ${p.message}`);
+                                    setIsInlineEditOpen(true);
+                                    setTimeout(() => document.getElementById("inline-edit-input")?.focus(), 50);
+                                  }
+                                }, 300);
+                              });
+                            }}
+                            className="opacity-0 group-hover:opacity-100 flex items-center gap-1.5 px-2 py-1 rounded bg-accent/10 text-accent hover:bg-accent/20 transition-all shrink-0 text-[10px] font-medium"
+                          >
+                            <Sparkles size={10} />
+                            Fix with AI
+                          </button>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              ) : terminals.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-full text-center gap-3">
                   <div className="w-10 h-10 rounded-xl bg-gray-800/60 flex items-center justify-center">
                     <Terminal size={20} className="text-gray-500" />
@@ -1912,7 +2233,7 @@ export default function WorkspacePage() {
                     <IDETerminal
                       sessionId={t.sessionId}
                       onSessionExpired={() => replaceTerminalSession(t.id)}
-                      onReady={(clearFn) => terminalClearFns.current.set(t.id, clearFn)}
+                      onReady={(actions) => terminalActions.current.set(t.id, actions)}
                     />
                   </div>
                 ))
@@ -1937,6 +2258,8 @@ export default function WorkspacePage() {
           { id: "history", title: "Git: View History", category: "Git", action: () => setIsHistoryOpen(true) },
           { id: "run", title: "Project: Run", category: "Run", action: () => handleRunProject() },
           { id: "index", title: "AI: Rebuild Search Index", category: "AI", action: () => handleIndexProject() },
+          { id: "review", title: "AI: Code Review", category: "AI", action: () => handleCodeReview() },
+          { id: "split", title: "View: Split Editor", category: "View", action: () => { setIsSplitMode(true); setSecondarySelectedFile(selectedFile); setActiveEditorPane("secondary"); } },
         ]}
       />
 
@@ -2127,6 +2450,82 @@ export default function WorkspacePage() {
           </button>
         </div>
       )}
+
+      {/* ── Status Bar ─────────────────────────────────────────────────────── */}
+      <div className="h-6 bg-accent flex items-center justify-between px-3 text-[11px] text-white/80 shrink-0 select-none">
+        {/* Left side */}
+        <div className="flex items-center gap-3">
+          {gitBranch && (
+            <span className="flex items-center gap-1">
+              <GitBranch size={10} />
+              {gitBranch}
+            </span>
+          )}
+          {problems.length > 0 && (
+            <button
+              onClick={() => { setBottomTab("problems"); const panel = terminalPanelRef.current; if (panel?.isCollapsed()) panel.expand(); }}
+              className="flex items-center gap-1 hover:text-white transition-colors"
+            >
+              <AlertCircle size={10} className="text-red-300" />
+              <span>{problems.filter(p => p.severity >= 8).length} errors</span>
+              {problems.filter(p => p.severity < 8).length > 0 && (
+                <span className="ml-1 text-yellow-300">{problems.filter(p => p.severity < 8).length} warnings</span>
+              )}
+            </button>
+          )}
+          {problems.length === 0 && (
+            <span className="flex items-center gap-1 opacity-60">
+              <CheckCircle2 size={10} />
+              No problems
+            </span>
+          )}
+        </div>
+
+        {/* Center: active file */}
+        {selectedFile && selectedFile !== "__preview__" && (
+          <span className="absolute left-1/2 -translate-x-1/2 opacity-70 truncate max-w-xs">
+            {selectedFile.split("/").pop()}
+            {dirtyTabs.has(selectedFile) ? " ●" : ""}
+          </span>
+        )}
+
+        {/* Right side */}
+        <div className="flex items-center gap-3">
+          {selectedFile && selectedFile !== "__preview__" && (
+            <>
+              <span>Ln {cursorPosition.line}, Col {cursorPosition.column}</span>
+              <span className="opacity-80">{editorLanguage}</span>
+            </>
+          )}
+          {isTyping && (
+            <span className="flex items-center gap-1 text-purple-200 animate-pulse">
+              <Brain size={10} />
+              AI thinking...
+            </span>
+          )}
+          {/* Font size controls */}
+          <button
+            onClick={() => setEditorFontSize(s => Math.max(10, s - 1))}
+            className="opacity-60 hover:opacity-100 transition-opacity leading-none"
+            title="Decrease font size"
+          >A-</button>
+          <span className="opacity-50 tabular-nums">{editorFontSize}px</span>
+          <button
+            onClick={() => setEditorFontSize(s => Math.min(24, s + 1))}
+            className="opacity-60 hover:opacity-100 transition-opacity leading-none"
+            title="Increase font size"
+          >A+</button>
+          {/* Zen mode toggle */}
+          <button
+            onClick={() => setIsZenMode(v => !v)}
+            title={isZenMode ? "Exit Zen Mode (Esc)" : "Enter Zen Mode (Ctrl+Z)"}
+            className={`opacity-60 hover:opacity-100 transition-opacity ${isZenMode ? "text-yellow-300 opacity-100" : ""}`}
+          >
+            {isZenMode ? "✦ Zen" : "✧ Zen"}
+          </button>
+          <span className="opacity-50">{theme === "dark" ? "Dark" : "Light"}</span>
+        </div>
+      </div>
     </div>
   );
 }

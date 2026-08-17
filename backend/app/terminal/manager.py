@@ -1,4 +1,5 @@
 from .session import TerminalSession
+from .docker_session import DockerTerminalSession
 
 
 class TerminalManager:
@@ -8,11 +9,20 @@ class TerminalManager:
 
     def create(self, cwd: str, project_name: str, env_vars: dict | None = None):
 
-        session = TerminalSession(
-            cwd=cwd,
-            project_name=project_name,
-            env_vars=env_vars,
-        )
+        try:
+            # Attempt to use Docker for secure sandboxed execution
+            session = DockerTerminalSession(
+                cwd=cwd,
+                project_name=project_name,
+                env_vars=env_vars,
+            )
+        except Exception as e:
+            print(f"Failed to start Docker session: {e}. Falling back to host terminal.")
+            session = TerminalSession(
+                cwd=cwd,
+                project_name=project_name,
+                env_vars=env_vars,
+            )
 
         self.sessions[session.id] = session
 

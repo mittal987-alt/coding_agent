@@ -3,17 +3,14 @@ import pickle
 from pathlib import Path
 from typing import List, Tuple
 
-import faiss
-import numpy as np
-from sentence_transformers import SentenceTransformer
-
 logger = logging.getLogger(__name__)
 
 _model = None
 
-def get_model() -> SentenceTransformer:
+def get_model():
     global _model
     if _model is None:
+        from sentence_transformers import SentenceTransformer
         _model = SentenceTransformer("all-MiniLM-L6-v2")
     return _model
 
@@ -45,6 +42,9 @@ def build_index(repo_path: Path, vectorstore_path: Path) -> int:
     Walk repo_path, chunk text files, embed them, and save a FAISS index +
     metadata to vectorstore_path. Returns number of chunks indexed.
     """
+    import faiss
+    import numpy as np
+
     all_chunks: List[Tuple[str, str]] = []
 
     for path in repo_path.rglob("*"):
@@ -87,6 +87,9 @@ def search_index(vectorstore_path: Path, query: str, top_k: int = 5) -> List[Tup
     Returns top_k (chunk_text, source_path) tuples most relevant to query.
     Returns [] if no index exists yet, or on any read/search failure.
     """
+    import faiss
+    import numpy as np
+
     index_file = vectorstore_path / "index.faiss"
     chunks_file = vectorstore_path / "chunks.pkl"
 

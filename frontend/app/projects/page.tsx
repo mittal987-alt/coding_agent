@@ -1,10 +1,10 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { Plus, LayoutGrid, Loader2 } from "lucide-react";
+import { Plus, LayoutGrid, Loader2, FolderGit2, Trash2, ArrowUpRight, Sparkles, Layers } from "lucide-react";
 import { ProjectService, Project, ProjectCreate } from "@/services/projects";
-import { ProjectCard } from "@/components/ProjectCard";
 import { CreateProjectModal } from "@/components/CreateProjectModal";
+import Link from "next/link";
 
 export default function ProjectsPage() {
   const [projects, setProjects] = useState<Project[]>([]);
@@ -30,111 +30,173 @@ export default function ProjectsPage() {
 
   const handleCreateProject = async (data: ProjectCreate) => {
     await ProjectService.createProject(data);
-    await fetchProjects(); // Refresh the list
+    await fetchProjects();
   };
 
   const handleDeleteProject = async (projectId: string) => {
-    // Guard against double-invocation (double-click, re-render, duplicate
-    // event firing, etc.) — if a delete for this exact project is already
-    // in flight, ignore the second call instead of sending another DELETE.
     if (deletingId === projectId) return;
 
     const confirmed = window.confirm(
-      "Delete this project? This will permanently remove it and its uploaded files. This cannot be undone."
+      "Delete this workspace? This will permanently remove its files and vector memory."
     );
     if (!confirmed) return;
 
     setDeletingId(projectId);
-
-    // Optimistically remove from the list so it disappears immediately
     const previousProjects = projects;
     setProjects((prev) => prev.filter((p) => p.id !== projectId));
 
     try {
       await ProjectService.deleteProject(projectId);
-      // Re-sync with backend to be safe (in case deletion partially failed server-side)
       await fetchProjects();
     } catch (error: any) {
-      // If the backend says it's already gone (404), treat it as a
-      // successful outcome rather than a failure — the project is deleted
-      // either way, this was likely just a duplicate request.
-      const status = error?.response?.status;
-      if (status === 404) {
-        console.warn("Project already deleted (likely a duplicate request).");
-        return;
-      }
-
-      console.error("Failed to delete project:", error);
-      // Roll back the optimistic removal so it doesn't silently vanish on a real failure
+      if (error?.response?.status === 404) return;
       setProjects(previousProjects);
-      alert("Failed to delete project. Check the console/backend logs for details.");
+      alert("Failed to delete workspace.");
     } finally {
       setDeletingId(null);
     }
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-black p-8">
-      <div className="max-w-7xl mx-auto">
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-8 gap-4">
+    <div className="min-h-screen bg-background text-foreground font-sans selection:bg-blue-600 selection:text-white">
+      
+      {/* Top Navigation Bar */}
+      <header className="border-b border-border-subtle bg-background/80 backdrop-blur-md sticky top-0 z-50">
+        <div className="max-w-7xl mx-auto px-6 sm:px-10 h-16 flex items-center justify-between">
+          <Link href="/" className="flex items-center gap-2.5 group">
+            <div className="w-8 h-8 rounded-lg bg-blue-600/10 border border-blue-500/20 flex items-center justify-center text-blue-500 group-hover:scale-105 transition-transform">
+              <FolderGit2 size={18} />
+            </div>
+            <span className="font-semibold text-sm tracking-tight text-text-primary">
+              AgentCode <span className="text-text-muted font-normal ml-1">/ Workspaces</span>
+            </span>
+          </Link>
+
+          <div className="flex items-center gap-3">
+            <div className="hidden sm:flex items-center gap-2 px-3 py-1 rounded-full bg-surface-2 border border-border-subtle text-xs text-text-secondary">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+              <span>Agents Ready</span>
+            </div>
+            <button
+              onClick={() => setIsModalOpen(true)}
+              className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-sm font-medium transition-all shadow-sm hover:shadow-blue-500/25"
+            >
+              <Plus size={16} />
+              <span>New Project</span>
+            </button>
+          </div>
+        </div>
+      </header>
+
+      {/* Main Container */}
+      <main className="max-w-7xl mx-auto px-6 sm:px-10 py-12">
+        
+        {/* Header Title Section */}
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-10 pb-6 border-b border-border-subtle">
           <div>
-            <h1 className="text-3xl font-bold text-gray-900 dark:text-white flex items-center gap-3">
-              <LayoutGrid className="text-blue-600 dark:text-blue-400" />
-              Your Projects
+            <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-blue-500/10 text-blue-400 text-xs font-medium mb-3 border border-blue-500/20">
+              <Sparkles size={12} />
+              <span>Autonomous Environments</span>
+            </div>
+            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-text-primary">
+              Your Workspaces
             </h1>
-            <p className="text-gray-500 dark:text-gray-400 mt-2">
-              Manage your AI software engineering workspaces.
+            <p className="text-text-secondary text-sm mt-1">
+              Select a repository to launch autonomous AI agents, refactor code, and manage execution flows.
             </p>
           </div>
-          <button
-            onClick={() => setIsModalOpen(true)}
-            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-xl font-medium transition-colors shadow-sm shadow-blue-600/20"
-          >
-            <Plus size={20} />
-            New Project
-          </button>
+          <div className="flex items-center gap-2 text-xs text-text-muted bg-surface-1 border border-border-subtle px-3 py-2 rounded-lg">
+            <Layers size={14} className="text-blue-500" />
+            <span>Total Active Workspaces: <strong className="text-text-primary">{projects.length}</strong></span>
+          </div>
         </div>
 
+        {/* Content States */}
         {isLoading ? (
-          <div className="flex items-center justify-center py-32">
-            <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+          <div className="flex flex-col items-center justify-center py-24 gap-3">
+            <Loader2 className="w-7 h-7 animate-spin text-blue-500" />
+            <p className="text-text-muted text-xs">Loading workspaces...</p>
           </div>
         ) : projects.length === 0 ? (
-          <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-2xl p-12 text-center">
-            <div className="w-16 h-16 bg-blue-50 dark:bg-blue-900/20 text-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-4">
-              <LayoutGrid size={32} />
+          <div className="bg-surface-1 border border-border-subtle rounded-2xl p-16 text-center max-w-md mx-auto shadow-sm">
+            <div className="w-12 h-12 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-500 mx-auto mb-4">
+              <LayoutGrid size={22} />
             </div>
-            <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">No projects yet</h3>
-            <p className="text-gray-500 dark:text-gray-400 mb-6 max-w-sm mx-auto">
-              Create your first AI software engineering project to get started with autonomous development.
+            <h3 className="text-base font-semibold text-text-primary mb-1">No workspaces found</h3>
+            <p className="text-text-muted text-xs mb-6 leading-relaxed">
+              Create your first project container to let autonomous agents connect to your codebase.
             </p>
             <button
               onClick={() => setIsModalOpen(true)}
-              className="inline-flex items-center gap-2 bg-gray-900 dark:bg-white text-white dark:text-black px-6 py-2.5 rounded-xl font-medium hover:bg-gray-800 dark:hover:bg-gray-100 transition-colors"
+              className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-xs font-medium transition-all"
             >
-              <Plus size={18} />
-              Create Project
+              <Plus size={14} />
+              <span>Create Workspace</span>
             </button>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
             {projects.map((project) => (
-              <ProjectCard
+              <div
                 key={project.id}
-                project={project}
-                onDelete={handleDeleteProject}
-                isDeleting={deletingId === project.id}
-              />
+                className="group relative bg-surface-1 hover:bg-surface-2 border border-border-subtle hover:border-blue-500/40 rounded-xl p-5 transition-all duration-200 shadow-sm flex flex-col justify-between"
+              >
+                <div>
+                  {/* Card Top Row */}
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="w-9 h-9 rounded-lg bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-500">
+                      <FolderGit2 size={18} />
+                    </div>
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-surface-2 border border-border-subtle text-text-muted">
+                      {project.id.slice(0, 8)}
+                    </span>
+                  </div>
+
+                  {/* Project Name & Description */}
+                  <h3 className="text-base font-semibold text-text-primary tracking-tight mb-1.5 group-hover:text-blue-400 transition-colors">
+                    {project.name}
+                  </h3>
+                  <p className="text-text-secondary text-xs line-clamp-2 leading-relaxed mb-6">
+                    {project.description || "No description provided for this codebase workspace."}
+                  </p>
+                </div>
+
+                {/* Card Footer Actions */}
+                <div className="pt-3 border-t border-border-subtle flex items-center justify-between">
+                  <Link
+                    href={`/projects/${project.id}`}
+                    className="inline-flex items-center gap-1.5 text-xs font-medium text-text-secondary hover:text-blue-400 transition-colors"
+                  >
+                    <span>Open workspace</span>
+                    <ArrowUpRight size={14} />
+                  </Link>
+
+                  <button
+                    onClick={() => handleDeleteProject(project.id)}
+                    disabled={deletingId === project.id}
+                    className="p-1.5 text-text-muted hover:text-red-400 hover:bg-red-500/10 rounded-md transition-colors"
+                    title="Delete project"
+                  >
+                    {deletingId === project.id ? (
+                      <Loader2 size={14} className="animate-spin text-red-400" />
+                    ) : (
+                      <Trash2 size={14} />
+                    )}
+                  </button>
+                </div>
+              </div>
             ))}
           </div>
         )}
 
+        {/* Modal Component */}
         <CreateProjectModal
           isOpen={isModalOpen}
           onClose={() => setIsModalOpen(false)}
           onSubmit={handleCreateProject}
         />
-      </div>
+      </main>
+
     </div>
   );
 }

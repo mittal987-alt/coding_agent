@@ -157,6 +157,11 @@ export const ProjectService = {
   },
 
   // --- Feature 6: Git history & rollback ---
+  getProjectStats: async (projectId: string): Promise<any> => {
+    const response = await apiClient.get<ApiResponse<any>>(`/projects/${projectId}/stats`);
+    return response.data.data;
+  },
+
   getGitLog: async (projectId: string, n = 20): Promise<GitCommit[]> => {
     const response = await apiClient.get<ApiResponse<GitCommit[]>>(
       `/projects/${projectId}/git/log`,
