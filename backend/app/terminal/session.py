@@ -10,9 +10,13 @@ class TerminalSession:
         self.id = str(uuid.uuid4())
         self._closed = False
 
+        # Larger PTY size reduces line-wrap frequency which decreases the
+        # volume of ANSI cursor-movement bytes npm/other CLIs generate.
+        # A wide PTY significantly reduces the chance of the PTY output
+        # buffer filling up faster than we can drain it.
         self.pty = winpty.PTY(
-            cols=120,
-            rows=30,
+            cols=220,
+            rows=50,
         )
 
         shell = r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe"
@@ -46,6 +50,21 @@ class TerminalSession:
         )
         self.write(prompt_cmd)
 
+        # --- npm / Node tooling fixes ---
+        # Disable npm's animated progress bar.  When npm detects a TTY it
+        # renders a spinner/progress bar by writing rapid ANSI escape
+        # sequences (cursor-up, clear-line, re-draw) hundreds of times per
+        # second.  This flood of bytes fills winpty's output pipe faster
+        # than the asyncio reader can drain it, causing npm to block on its
+        # own write() call — the visible symptom is the terminal freezing
+        # for minutes at a time during `npm install`.
+        self.write("$env:NPM_CONFIG_PROGRESS='false'\r\n")
+        # Disable the npm update notifier and non-essential network calls
+        # that can stall the process on slow/offline environments.
+        self.write("$env:NO_UPDATE_NOTIFIER='1'\r\n")
+        self.write("$env:NPM_CONFIG_FUND='false'\r\n")
+        self.write("$env:NPM_CONFIG_AUDIT='false'\r\n")
+
         if env_vars:
             for k, v in env_vars.items():
                 if v is not None:
@@ -71,30 +90,35 @@ class TerminalSession:
                 pass
 
     def read(self) -> str | None:
-        """Blocking read from the PTY.
+        """Read available output from the PTY.
 
-        Blocks the calling thread until data is available or the child process
-        exits. This is intentionally blocking so that `asyncio.run_in_executor`
-        can park a thread cheaply without busy-polling.
+        Uses non-blocking reads with a short sleep to avoid deadlocking:
+        - blocking=True can cause winpty to hold its internal lock while
+          waiting for data, which prevents write() from acquiring the same
+          lock, creating a deadlock when npm is actively writing output.
+        - Non-blocking polling with a tiny sleep keeps CPU usage low while
+          ensuring reads and writes can interleave freely.
 
         Returns:
-            str  - output data (always non-empty when process is alive).
+            str  - output data (may be empty string — caller should handle).
             None - the child process has exited; caller should stop reading.
         """
         if self._closed:
             return None
         try:
-            # Check for process exit before blocking.
             if self.pty.iseof():
                 self._closed = True
                 return None
-            # blocking=True: thread waits here until winpty has data ready.
-            data = self.pty.read(blocking=True)
-            # After a blocking read, check again — a zero-length result after
-            # blocking usually means the child process just exited.
-            if not data and self.pty.iseof():
-                self._closed = True
-                return None
+            # Non-blocking read — returns immediately with whatever is in
+            # the buffer (may be empty string if nothing ready yet).
+            data = self.pty.read(blocking=False)
+            if not data:
+                # Nothing available right now; yield briefly so we don't
+                # busy-spin and so write() can acquire the winpty lock.
+                if self.pty.iseof():
+                    self._closed = True
+                    return None
+                time.sleep(0.01)
             return data
         except Exception:
             return None

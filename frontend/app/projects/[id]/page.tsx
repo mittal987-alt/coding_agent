@@ -73,6 +73,21 @@ const SUGGESTED_PROMPTS = [
 // ---------------------------------------------------------------------------
 // ---------------------------------------------------------------------------
 
+const SKIP_DIR_SEGMENTS = new Set([
+  ".git",
+  "node_modules",
+  "__pycache__",
+  ".venv",
+  "venv",
+  ".next",
+]);
+
+function shouldSkipFile(relativePath: string): boolean {
+  const segments = relativePath.replace(/\\/g, "/").split("/");
+  return segments.some((seg) => SKIP_DIR_SEGMENTS.has(seg));
+}
+
+
 
 export default function WorkspacePage() {
   const params = useParams();
@@ -195,13 +210,35 @@ export default function WorkspacePage() {
     // Create FormData with multiple files and their relative paths
     const formData = new FormData();
     const relativePaths: string[] = [];
+    let uploadCount = 0;
     
     acceptedFiles.forEach((file: any) => {
-      formData.append("files", file);
       // use path from react-dropzone if available, fallback to filename
-      const relPath = file.path ? file.path.replace(/^\//, "") : file.name;
+      let relPath = file.path ? file.path.replace(/^\//, "") : file.name;
+      // Normalize backslashes to forward slashes and remove leading slash
+      relPath = relPath.replace(/\\/g, "/").replace(/^\//, "");
+      
+      // Filter out files that belong to skipped directories (e.g. node_modules, .git)
+      if (shouldSkipFile(relPath)) {
+        return;
+      }
+      
+      const parts = relPath.split("/");
+      if (parts.length > 1) {
+        relPath = parts.slice(1).join("/");
+      }
+      
+      formData.append("files", file);
       relativePaths.push(relPath);
+      uploadCount++;
     });
+
+    if (uploadCount === 0) {
+      error("No files to upload after filtering out node_modules/.git/etc.");
+      setIsUploading(false);
+      return;
+    }
+
     formData.append("paths", JSON.stringify(relativePaths));
 
     try {
@@ -211,7 +248,7 @@ export default function WorkspacePage() {
       });
       const json = await res.json();
       if (json.success) {
-        success(`Successfully uploaded ${acceptedFiles.length} file(s)`);
+        success(`Successfully uploaded ${uploadCount} file(s)`);
         refreshFileTree();
       } else {
         error(json.message || "Failed to upload files");

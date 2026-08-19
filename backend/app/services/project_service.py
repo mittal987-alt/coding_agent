@@ -114,13 +114,15 @@ class ProjectService:
 
         written = 0
         for rel_path, content in entries:
-            parts = Path(rel_path).parts
+            # Normalize path separators to forward slashes to support cross-platform path parsing
+            normalized_rel_path = rel_path.replace("\\", "/")
+            parts = Path(normalized_rel_path).parts
 
             # Skip junk directories (node_modules, .git, venvs, build caches, etc.)
             if any(part in SKIP_DIR_NAMES for part in parts):
                 continue
 
-            target = (repo_path / rel_path).resolve()
+            target = (repo_path / normalized_rel_path).resolve()
 
             # Guard against path traversal from a malicious/odd relative path
             if not str(target).startswith(str(repo_root_resolved)):

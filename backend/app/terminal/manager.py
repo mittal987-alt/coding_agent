@@ -1,5 +1,4 @@
 from .session import TerminalSession
-from .docker_session import DockerTerminalSession
 
 
 class TerminalManager:
@@ -8,24 +7,25 @@ class TerminalManager:
         self.sessions = {}
 
     def create(self, cwd: str, project_name: str, env_vars: dict | None = None):
-
-        try:
-            # Attempt to use Docker for secure sandboxed execution
-            session = DockerTerminalSession(
-                cwd=cwd,
-                project_name=project_name,
-                env_vars=env_vars,
-            )
-        except Exception as e:
-            print(f"Failed to start Docker session: {e}. Falling back to host terminal.")
-            session = TerminalSession(
-                cwd=cwd,
-                project_name=project_name,
-                env_vars=env_vars,
-            )
+        # Always use the host PowerShell terminal session.
+        #
+        # The DockerTerminalSession was previously attempted first, but it
+        # caused two severe problems:
+        #   1. It spawns cmd.exe (not PowerShell), so standard commands like
+        #      `ls` and `clear` fail with "not recognised".
+        #   2. Even when Docker is available, the python:3.11-slim image has
+        #      no Node.js, so `npm install` / `npm run dev` break silently.
+        #   3. Its blocking=True PTY read held the winpty lock indefinitely,
+        #      preventing npm from writing output and causing 30-minute hangs.
+        #   4. On shutdown the blocked executor thread caused the
+        #      "executor did not finish joining within 300 seconds" error.
+        session = TerminalSession(
+            cwd=cwd,
+            project_name=project_name,
+            env_vars=env_vars,
+        )
 
         self.sessions[session.id] = session
-
         return session
 
     def get(self, session_id):

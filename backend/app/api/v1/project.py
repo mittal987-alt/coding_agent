@@ -18,6 +18,38 @@ from app.utils.storage_manager import StorageManager
 
 storage = StorageManager()
 
+# ---------------------------------------------------------------------------
+# Project root detection (handles local-folder uploads that land in a subdir)
+# ---------------------------------------------------------------------------
+
+_PROJECT_MANIFESTS = [
+    "package.json", "requirements.txt", "pyproject.toml",
+    "Cargo.toml", "go.mod", "Makefile", "setup.py",
+]
+_SKIP_ROOT_DIRS = {".git", "node_modules", "__pycache__", ".next", "dist", "build", ".venv", "venv"}
+
+
+def _find_project_root(repo_path: Path) -> Path:
+    """Return the directory that actually contains the project manifest files.
+
+    Checks the repository root first; if nothing is found, checks one level
+    of immediate subdirectories.  This handles local-folder uploads where
+    all files are nested one level deep (e.g. repository/app/package.json).
+    """
+    for m in _PROJECT_MANIFESTS:
+        if (repo_path / m).exists():
+            return repo_path
+    try:
+        for sub in sorted(repo_path.iterdir()):
+            if sub.is_dir() and sub.name not in _SKIP_ROOT_DIRS:
+                for m in _PROJECT_MANIFESTS:
+                    if (sub / m).exists():
+                        return sub
+    except Exception:
+        pass
+    return repo_path
+
+
 router = APIRouter()
 
 
@@ -1064,10 +1096,12 @@ def git_revert_file(
 # Run project — detect & launch dev/build/test command in a terminal session
 # ---------------------------------------------------------------------------
 
-def _detect_run_command(repo_path: Path) -> tuple[str, str]:
+def _detect_run_command(repo_path: Path) -> tuple[str, str, Path]:
     """
-    Inspect the project directory and return (label, command) for the most
-    appropriate dev/run command.  Checks, in priority order:
+    Inspect the project directory and return (label, command, cwd) where
+    `cwd` is the actual directory the command should run in.
+
+    Priority order:
       1. package.json  → npm run dev / npm start
       2. Makefile      → make run / make dev / make start
       3. requirements.txt / setup.py / pyproject.toml → uvicorn / python / flask
@@ -1077,60 +1111,68 @@ def _detect_run_command(repo_path: Path) -> tuple[str, str]:
     """
     import json as _json
 
-    # --- Node.js / package.json ---
-    pkg = repo_path / "package.json"
-    if pkg.exists():
-        try:
-            data = _json.loads(pkg.read_text(encoding="utf-8"))
-            scripts = data.get("scripts", {})
-            if "dev" in scripts:
-                return "npm dev", "npm run dev"
-            if "start" in scripts:
-                return "npm start", "npm start"
-            if "serve" in scripts:
-                return "npm serve", "npm run serve"
-        except Exception:
-            pass
-        return "npm start", "npm start"
+    project_root = _find_project_root(repo_path)
 
-    # --- Makefile ---
-    makefile = repo_path / "Makefile"
-    if makefile.exists():
-        content = makefile.read_text(encoding="utf-8", errors="ignore")
-        for target in ("run", "dev", "start", "serve"):
-            if f"\n{target}:" in content or content.startswith(f"{target}:"):
-                return f"make {target}", f"make {target}"
+    def check_dir(dir_path: Path) -> tuple[str, str] | None:
+        # --- Node.js / package.json ---
+        pkg = dir_path / "package.json"
+        if pkg.exists():
+            try:
+                data = _json.loads(pkg.read_text(encoding="utf-8"))
+                scripts = data.get("scripts", {})
+                if "dev" in scripts:
+                    return "npm dev", "npm run dev"
+                if "start" in scripts:
+                    return "npm start", "npm start"
+                if "serve" in scripts:
+                    return "npm serve", "npm run serve"
+            except Exception:
+                pass
+            return "npm start", "npm start"
 
-    # --- Python ---
-    has_req = (repo_path / "requirements.txt").exists()
-    has_setup = (repo_path / "setup.py").exists()
-    has_pyproject = (repo_path / "pyproject.toml").exists()
+        # --- Makefile ---
+        makefile = dir_path / "Makefile"
+        if makefile.exists():
+            content = makefile.read_text(encoding="utf-8", errors="ignore")
+            for target in ("run", "dev", "start", "serve"):
+                if f"\n{target}:" in content or content.startswith(f"{target}:"):
+                    return f"make {target}", f"make {target}"
 
-    if has_req or has_setup or has_pyproject:
-        # Look for a main.py / app.py / run.py that imports uvicorn / FastAPI / Flask
-        for candidate in ["main.py", "app.py", "run.py", "server.py", "manage.py"]:
-            f = repo_path / candidate
-            if f.exists():
-                src = f.read_text(encoding="utf-8", errors="ignore")
-                if "uvicorn" in src or "fastapi" in src.lower():
-                    return "uvicorn", f"uvicorn {candidate[:-3]}:app --reload"
-                if "flask" in src.lower():
-                    return "flask run", "flask run --debug"
-                if candidate == "manage.py":
-                    return "django", "python manage.py runserver"
-                return f"python {candidate}", f"python {candidate}"
-        return "python", "python main.py"
+        # --- Python ---
+        has_req = (dir_path / "requirements.txt").exists()
+        has_setup = (dir_path / "setup.py").exists()
+        has_pyproject = (dir_path / "pyproject.toml").exists()
 
-    # --- Rust ---
-    if (repo_path / "Cargo.toml").exists():
-        return "cargo run", "cargo run"
+        if has_req or has_setup or has_pyproject:
+            for candidate in ["main.py", "app.py", "run.py", "server.py", "manage.py"]:
+                f = dir_path / candidate
+                if f.exists():
+                    src = f.read_text(encoding="utf-8", errors="ignore")
+                    if "uvicorn" in src or "fastapi" in src.lower():
+                        return "uvicorn", f"uvicorn {candidate[:-3]}:app --reload"
+                    if "flask" in src.lower():
+                        return "flask run", "flask run --debug"
+                    if candidate == "manage.py":
+                        return "django", "python manage.py runserver"
+                    return f"python {candidate}", f"python {candidate}"
+            return "python", "python main.py"
 
-    # --- Go ---
-    if (repo_path / "go.mod").exists():
-        return "go run", "go run ."
+        # --- Rust ---
+        if (dir_path / "Cargo.toml").exists():
+            return "cargo run", "cargo run"
 
-    # --- Fallback ---
-    return "No command detected", 'echo "No run command detected for this project"'
+        # --- Go ---
+        if (dir_path / "go.mod").exists():
+            return "go run", "go run ."
+
+        return None
+
+    res = check_dir(project_root)
+    if res:
+        return res[0], res[1], project_root
+
+    return "No command detected", 'echo "No run command detected for this project"', repo_path
+
 
 
 @router.post("/{project_id}/run", response_model=ApiResponse)
@@ -1154,11 +1196,11 @@ def run_project(
     if not repo_path.exists():
         raise HTTPException(status_code=400, detail="Project workspace not found. Clone or upload files first.")
 
-    label, command = _detect_run_command(repo_path)
+    label, command, project_root = _detect_run_command(repo_path)
 
-    # Create a fresh PTY terminal session rooted at the repository
+    # Create a fresh PTY terminal session rooted at the real project root
     session = terminal_manager.create(
-        cwd=str(repo_path),
+        cwd=str(project_root),
         project_name=project.name,
     )
 
@@ -1272,28 +1314,10 @@ def run_project(
         raise HTTPException(status_code=404, detail="Project not found.")
 
     repo_path = storage.repository_path(project.id)
-
-    # Detect run command heuristically
-    command = "npm start"
-    label = "npm start"
-    if (repo_path / "package.json").exists():
-        try:
-            import json as _json
-            pkg = _json.loads((repo_path / "package.json").read_text())
-            scripts = pkg.get("scripts", {})
-            if "dev" in scripts:
-                command, label = "npm run dev", "npm run dev"
-            elif "start" in scripts:
-                command, label = "npm start", "npm start"
-        except Exception:
-            pass
-    elif (repo_path / "requirements.txt").exists() or (repo_path / "pyproject.toml").exists():
-        command, label = "python main.py", "python main.py"
-    elif (repo_path / "Makefile").exists():
-        command, label = "make", "make"
+    label, command, project_root = _detect_run_command(repo_path)
 
     session = terminal_manager.create(
-        cwd=str(repo_path),
+        cwd=str(project_root),
         project_name=project.name,
         env_vars=project.env_vars or {},
     )

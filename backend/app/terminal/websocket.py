@@ -38,8 +38,10 @@ async def terminal_socket(
         loop = asyncio.get_running_loop()
         try:
             while True:
-                # session.read() blocks the executor thread until data
-                # is available, so this loop idles efficiently.
+                # session.read() uses non-blocking PTY reads with a short
+                # sleep, so it returns quickly even when there's no data.
+                # None means the process exited; empty string means no data
+                # yet — skip sending empty frames to the client.
                 output = await loop.run_in_executor(None, session.read)
                 if output is None:
                     # Process exited — close the socket and stop reading.

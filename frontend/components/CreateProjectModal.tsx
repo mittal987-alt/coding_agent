@@ -31,9 +31,10 @@ const SKIP_DIR_SEGMENTS = new Set([
 const UPLOAD_BATCH_SIZE = 100;
 
 function shouldSkipFile(relativePath: string): boolean {
-  const segments = relativePath.split("/");
+  const segments = relativePath.replace(/\\/g, "/").split("/");
   return segments.some((seg) => SKIP_DIR_SEGMENTS.has(seg));
 }
+
 
 export const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
   isOpen,
@@ -93,7 +94,7 @@ export const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
     }
 
     const firstRelPath = (filtered[0] as any).webkitRelativePath || filtered[0].name;
-    const topLevelFolder = firstRelPath.split("/")[0] || "Selected Folder";
+    const topLevelFolder = firstRelPath.replace(/\\/g, "/").split("/")[0] || "Selected Folder";
 
     setSelectedFiles(filtered);
     setFolderName(topLevelFolder);
@@ -121,7 +122,12 @@ export const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
     const relativePaths: string[] = [];
 
     for (const file of batch) {
-      const relPath = (file as any).webkitRelativePath || file.name;
+      let relPath = (file as any).webkitRelativePath || file.name;
+      relPath = relPath.replace(/\\/g, "/");
+      const parts = relPath.split("/");
+      if (parts.length > 1) {
+        relPath = parts.slice(1).join("/");
+      }
       relativePaths.push(relPath);
       formData.append("files", file);
     }

@@ -79,10 +79,16 @@ class DockerTerminalSession:
             if self.pty.iseof():
                 self._closed = True
                 return None
-            data = self.pty.read(blocking=True)
-            if not data and self.pty.iseof():
-                self._closed = True
-                return None
+            # Non-blocking read — same pattern as TerminalSession to avoid
+            # holding the winpty lock and causing a deadlock or the
+            # 300-second executor hang on uvicorn shutdown.
+            data = self.pty.read(blocking=False)
+            if not data:
+                if self.pty.iseof():
+                    self._closed = True
+                    return None
+                import time
+                time.sleep(0.01)
             return data
         except Exception:
             return None
