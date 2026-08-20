@@ -17,10 +17,15 @@ export type FileNode = {
   status?: FileStatus;
 };
 
-export type TerminalSession = {
+export type TerminalPane = {
   id: string;
   sessionId: string;
+};
+
+export type TerminalSession = {
+  id: string;
   label: string;
+  panes: TerminalPane[];
 };
 
 export type ContextMenuState = {

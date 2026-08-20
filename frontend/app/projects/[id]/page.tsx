@@ -138,9 +138,19 @@ export default function WorkspacePage() {
 
   const [terminals, setTerminals] = useState<TerminalSession[]>([]);
   const [activeTerminalId, setActiveTerminalId] = useState<string | null>(null);
+  const [focusedSessionId, setFocusedSessionId] = useState<string | null>(null);
   const [isTerminalMaximized, setIsTerminalMaximized] = useState(false);
-  // Map from terminal tab id → terminal actions exposed by IDETerminal
-  const terminalActions = useRef<Map<string, { clear: () => void; getContent: () => string }>>(new Map());
+  // Map from pane id → terminal actions exposed by IDETerminal
+  const terminalActions = useRef<Map<string, { clear: () => void; getContent: () => string; write?: (data: string) => void }>>(new Map());
+
+  // Tab Renaming
+  const [editingTabId, setEditingTabId] = useState<string | null>(null);
+  const [editingTabLabel, setEditingTabLabel] = useState("");
+
+  // Command History and presets
+  const [commandHistory, setCommandHistory] = useState<string[]>(["npm run dev", "npm install", "git status", "git diff"]);
+  const [customCommandInput, setCustomCommandInput] = useState("");
+  const [showHistoryDropdown, setShowHistoryDropdown] = useState(false);
 
   // Monaco editor instance and per-file model registry
   const monacoRef = useRef<typeof Monaco | null>(null);
@@ -488,10 +498,11 @@ export default function WorkspacePage() {
       setTerminals((prev) => {
         const newTerminal: TerminalSession = {
           id: `run-${Date.now()}`,
-          sessionId: result.run_id,
           label: `▶ ${result.label}`,
+          panes: [{ id: `p-${Date.now()}`, sessionId: result.run_id }],
         };
         setActiveTerminalId(newTerminal.id);
+        setFocusedSessionId(result.run_id);
         return [...prev, newTerminal];
       });
 
@@ -602,10 +613,11 @@ export default function WorkspacePage() {
       setTerminals((prev) => {
         const newTerminal: TerminalSession = {
           id: `t-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-          sessionId,
           label: `Terminal ${prev.length + 1}`,
+          panes: [{ id: `p-${Date.now()}`, sessionId }],
         };
         setActiveTerminalId(newTerminal.id);
+        setFocusedSessionId(sessionId);
         return [...prev, newTerminal];
       });
     } catch (err) {
@@ -614,7 +626,7 @@ export default function WorkspacePage() {
     }
   };
 
-  const replaceTerminalSession = async (oldId: string) => {
+  const replaceTerminalSession = async (tabId: string, paneId: string) => {
     try {
       const res = await fetch(
         `${apiBaseUrl}/terminal/projects/${projectId}`,
@@ -625,18 +637,28 @@ export default function WorkspacePage() {
       const newSessionId: string = json.session_id;
 
       // Remove the clear fn for the old tab since its xterm instance will remount
-      terminalActions.current.delete(oldId);
+      terminalActions.current.delete(paneId);
 
       setTerminals((prev) =>
-        prev.map((t) => (t.id === oldId ? { ...t, sessionId: newSessionId } : t))
+        prev.map((t) =>
+          t.id === tabId
+            ? {
+                ...t,
+                panes: t.panes.map((p) =>
+                  p.id === paneId ? { ...p, sessionId: newSessionId } : p
+                ),
+              }
+            : t
+        )
       );
 
       const storageKey = `terminal-sessions-${projectId}`;
       try {
-        const updatedIds = terminals.map((t) =>
-          t.id === oldId ? newSessionId : t.sessionId
-        );
-        sessionStorage.setItem(storageKey, JSON.stringify(updatedIds));
+        setTerminals((updatedTerminals) => {
+          const allSessionIds = updatedTerminals.flatMap((ut) => ut.panes.map((p) => p.sessionId));
+          sessionStorage.setItem(storageKey, JSON.stringify(allSessionIds));
+          return updatedTerminals;
+        });
       } catch { /* ignore */ }
     } catch (err) {
       console.error("Failed to replace expired terminal session", err);
@@ -644,30 +666,140 @@ export default function WorkspacePage() {
     }
   };
 
-  const closeTerminal = (id: string) => {
-    terminalActions.current.delete(id);
+  const closeTerminal = (tabId: string) => {
     setTerminals((prev) => {
-      const remaining = prev.filter((t) => t.id !== id);
-      if (activeTerminalId === id) {
+      const tab = prev.find((t) => t.id === tabId);
+      if (tab) {
+        tab.panes.forEach((pane) => {
+          terminalActions.current.delete(pane.id);
+        });
+      }
+      const remaining = prev.filter((t) => t.id !== tabId);
+      if (activeTerminalId === tabId) {
         setActiveTerminalId(remaining.length > 0 ? remaining[remaining.length - 1].id : null);
       }
+      
+      const storageKey = `terminal-sessions-${projectId}`;
+      try {
+        const allSessionIds = remaining.flatMap((ut) => ut.panes.map((p) => p.sessionId));
+        sessionStorage.setItem(storageKey, JSON.stringify(allSessionIds));
+      } catch { /* ignore */ }
+
       return remaining;
     });
   };
 
+  const closeTerminalPane = (tabId: string, paneId: string) => {
+    terminalActions.current.delete(paneId);
+    setTerminals((prev) => {
+      const updated = prev.map((t) => {
+        if (t.id === tabId) {
+          return {
+            ...t,
+            panes: t.panes.filter((p) => p.id !== paneId),
+          };
+        }
+        return t;
+      }).filter((t) => t.panes.length > 0);
+
+      const exists = updated.some((t) => t.id === activeTerminalId);
+      if (!exists) {
+        setActiveTerminalId(updated.length > 0 ? updated[updated.length - 1].id : null);
+      }
+
+      const storageKey = `terminal-sessions-${projectId}`;
+      try {
+        const allSessionIds = updated.flatMap((ut) => ut.panes.map((p) => p.sessionId));
+        sessionStorage.setItem(storageKey, JSON.stringify(allSessionIds));
+      } catch { /* ignore */ }
+
+      return updated;
+    });
+  };
+
+  const splitTerminal = async (tabId: string) => {
+    try {
+      const activeTab = terminals.find((t) => t.id === tabId);
+      if (activeTab && activeTab.panes.length >= 2) {
+        error("Maximum 2 split panes side-by-side supported.");
+        return;
+      }
+
+      const res = await fetch(
+        `${apiBaseUrl}/terminal/projects/${projectId}`,
+        { method: "POST" }
+      );
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const json = await res.json();
+      const sessionId: string = json.session_id;
+
+      setTerminals((prev) =>
+        prev.map((t) => {
+          if (t.id === tabId) {
+            const newPaneId = `p-${Date.now()}`;
+            return {
+              ...t,
+              panes: [...t.panes, { id: newPaneId, sessionId }],
+            };
+          }
+          return t;
+        })
+      );
+
+      setFocusedSessionId(sessionId);
+
+      const storageKey = `terminal-sessions-${projectId}`;
+      try {
+        setTerminals((updated) => {
+          const allSessionIds = updated.flatMap((ut) => ut.panes.map((p) => p.sessionId));
+          sessionStorage.setItem(storageKey, JSON.stringify(allSessionIds));
+          return updated;
+        });
+      } catch { /* ignore */ }
+    } catch (err) {
+      console.error("Failed to split terminal", err);
+      error("Failed to split terminal. Is the backend running?");
+    }
+  };
+
+  const sendCommandToTerminal = (command: string) => {
+    if (!activeTerminalId) return;
+    const activeTab = terminals.find((t) => t.id === activeTerminalId);
+    if (!activeTab) return;
+    
+    const targetPane = activeTab.panes.find((p) => p.sessionId === focusedSessionId) || activeTab.panes[0];
+    if (!targetPane) return;
+    
+    const actions = terminalActions.current.get(targetPane.id);
+    if (actions && actions.write) {
+      actions.write(`${command}\r\n`);
+    } else {
+      error("Terminal pane not ready or not writable.");
+    }
+  };
+
   const clearActiveTerminal = () => {
     if (!activeTerminalId) return;
-    const actions = terminalActions.current.get(activeTerminalId);
-    if (actions) actions.clear();
+    const activeTab = terminals.find((t) => t.id === activeTerminalId);
+    if (!activeTab) return;
+    activeTab.panes.forEach((pane) => {
+      const actions = terminalActions.current.get(pane.id);
+      if (actions) actions.clear();
+    });
   };
 
   const handleDebugTerminal = () => {
     if (!activeTerminalId) return;
-    const actions = terminalActions.current.get(activeTerminalId);
+    const activeTab = terminals.find((t) => t.id === activeTerminalId);
+    if (!activeTab) return;
+    
+    const targetPane = activeTab.panes.find((p) => p.sessionId === focusedSessionId) || activeTab.panes[0];
+    if (!targetPane) return;
+    
+    const actions = terminalActions.current.get(targetPane.id);
     if (!actions) return;
     
     const rawContent = actions.getContent();
-    // Grab the last 2000 chars roughly to avoid token bloat
     const contentToAnalyze = rawContent.slice(-2000);
     
     if (!contentToAnalyze.trim()) {
@@ -675,7 +807,6 @@ export default function WorkspacePage() {
       return;
     }
     
-    // Ensure chat panel is open
     const panel = chatPanelRef.current;
     if (panel && panel.isCollapsed()) panel.expand();
     setIsChatCollapsed(false);
@@ -1069,11 +1200,12 @@ Provide actionable, specific suggestions for each issue you find.`;
         if (saved.length > 0) {
           const restored_sessions: TerminalSession[] = saved.map((sid, i) => ({
             id: `t-restored-${i}-${sid.slice(0, 6)}`,
-            sessionId: sid,
             label: `Terminal ${i + 1}`,
+            panes: [{ id: `p-restored-${i}`, sessionId: sid }],
           }));
           setTerminals(restored_sessions);
           setActiveTerminalId(restored_sessions[restored_sessions.length - 1].id);
+          setFocusedSessionId(restored_sessions[restored_sessions.length - 1].panes[0].sessionId);
           restored = true;
         }
       } catch { /* ignore */ }
@@ -1142,6 +1274,12 @@ Provide actionable, specific suggestions for each issue you find.`;
       </div>
     );
   }
+
+  const hasNode = fileTree.some((f) => f.name === "package.json") || 
+                  fileTree.some((f) => f.name === "app" && f.children?.some((c) => c.name === "package.json"));
+                  
+  const hasPython = fileTree.some((f) => f.name === "requirements.txt" || f.name === "pyproject.toml" || f.name === "setup.py") ||
+                    fileTree.some((f) => f.name === "app" && f.children?.some((c) => c.name === "requirements.txt" || c.name === "pyproject.toml"));
 
   return (
     <div {...getRootProps()} className={`h-screen flex flex-col bg-background text-foreground overflow-hidden font-sans relative${isZenMode ? " zen-mode" : ""}`}>
@@ -2099,10 +2237,15 @@ Provide actionable, specific suggestions for each issue you find.`;
                 {terminals.map((t) => {
                   const isRun = t.id.startsWith("run-");
                   const isActive = activeTerminalId === t.id && bottomTab === "terminal";
+                  const isEditing = editingTabId === t.id;
                   return (
                     <div
                       key={t.id}
                       onClick={() => { setActiveTerminalId(t.id); setBottomTab("terminal"); }}
+                      onDoubleClick={() => {
+                        setEditingTabId(t.id);
+                        setEditingTabLabel(t.label);
+                      }}
                       className={`group flex items-center gap-1.5 px-2.5 py-1 rounded-md cursor-pointer text-[11px] shrink-0 whitespace-nowrap transition-colors ${
                         isActive
                           ? "bg-surface-2 text-text-primary shadow-sm"
@@ -2112,7 +2255,40 @@ Provide actionable, specific suggestions for each issue you find.`;
                       {isRun
                         ? <Play size={10} className={isActive ? "text-green-500" : "text-text-muted group-hover:text-green-500"} />
                         : <Terminal size={10} className={isActive ? "text-accent" : "text-text-muted group-hover:text-accent"} />}
-                      <span>{t.label}</span>
+                      
+                      {isEditing ? (
+                        <input
+                          type="text"
+                          value={editingTabLabel}
+                          onChange={(e) => setEditingTabLabel(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              setTerminals((prev) =>
+                                prev.map((item) =>
+                                  item.id === t.id ? { ...item, label: editingTabLabel } : item
+                                )
+                              );
+                              setEditingTabId(null);
+                            } else if (e.key === "Escape") {
+                              setEditingTabId(null);
+                            }
+                          }}
+                          onBlur={() => {
+                            setTerminals((prev) =>
+                              prev.map((item) =>
+                                item.id === t.id ? { ...item, label: editingTabLabel } : item
+                              )
+                            );
+                            setEditingTabId(null);
+                          }}
+                          className="bg-surface-3 text-text-primary px-1 border border-blue-500 outline-none rounded text-[11px] max-w-[80px]"
+                          autoFocus
+                          onClick={(e) => e.stopPropagation()}
+                        />
+                      ) : (
+                        <span>{t.label}</span>
+                      )}
+                      
                       <button
                         onClick={(e) => { e.stopPropagation(); closeTerminal(t.id); }}
                         className="opacity-0 group-hover:opacity-100 hover:text-red-400 transition-opacity ml-0.5 leading-none"
@@ -2136,6 +2312,16 @@ Provide actionable, specific suggestions for each issue you find.`;
                   >
                     <Sparkles size={12} />
                     Debug Terminal
+                  </button>
+                )}
+                {/* Split Terminal */}
+                {terminals.length > 0 && bottomTab === "terminal" && (
+                  <button
+                    onClick={() => activeTerminalId && splitTerminal(activeTerminalId)}
+                    title="Split Terminal Side-by-Side"
+                    className="p-1.5 rounded text-text-secondary hover:text-text-primary hover:bg-surface-hover transition-colors"
+                  >
+                    <SplitSquareHorizontal size={12} />
                   </button>
                 )}
                 {/* New terminal */}
@@ -2188,6 +2374,120 @@ Provide actionable, specific suggestions for each issue you find.`;
                 </button>
               </div>
             </div>
+
+            {/* Quick Commands & Command History Bar */}
+            {terminals.length > 0 && bottomTab === "terminal" && (
+              <div className="flex items-center gap-2 px-3 py-1 bg-surface-2 border-b border-border-subtle flex-shrink-0 select-none overflow-x-auto no-scrollbar">
+                <span className="text-[10px] text-text-muted uppercase tracking-wider font-semibold shrink-0">Quick Run:</span>
+                
+                {/* Git Presets */}
+                <button
+                  onClick={() => sendCommandToTerminal("git status")}
+                  className="px-2 py-0.5 rounded bg-surface-3 hover:bg-surface-hover text-text-secondary hover:text-text-primary text-[10px] transition-colors border border-border-subtle shrink-0"
+                >
+                  git status
+                </button>
+                <button
+                  onClick={() => sendCommandToTerminal("git diff")}
+                  className="px-2 py-0.5 rounded bg-surface-3 hover:bg-surface-hover text-text-secondary hover:text-text-primary text-[10px] transition-colors border border-border-subtle shrink-0"
+                >
+                  git diff
+                </button>
+
+                {/* Conditional Node Presets */}
+                {hasNode && (
+                  <>
+                    <button
+                      onClick={() => sendCommandToTerminal("npm run dev")}
+                      className="px-2 py-0.5 rounded bg-surface-3 hover:bg-surface-hover text-text-secondary hover:text-text-primary text-[10px] transition-colors border border-border-subtle shrink-0"
+                    >
+                      npm run dev
+                    </button>
+                    <button
+                      onClick={() => sendCommandToTerminal("npm install")}
+                      className="px-2 py-0.5 rounded bg-surface-3 hover:bg-surface-hover text-text-secondary hover:text-text-primary text-[10px] transition-colors border border-border-subtle shrink-0"
+                    >
+                      npm install
+                    </button>
+                  </>
+                )}
+
+                {/* Conditional Python Presets */}
+                {hasPython && (
+                  <>
+                    <button
+                      onClick={() => sendCommandToTerminal("python main.py")}
+                      className="px-2 py-0.5 rounded bg-surface-3 hover:bg-surface-hover text-text-secondary hover:text-text-primary text-[10px] transition-colors border border-border-subtle shrink-0"
+                    >
+                      python main.py
+                    </button>
+                    <button
+                      onClick={() => sendCommandToTerminal("pip install -r requirements.txt")}
+                      className="px-2 py-0.5 rounded bg-surface-3 hover:bg-surface-hover text-text-secondary hover:text-text-primary text-[10px] transition-colors border border-border-subtle shrink-0"
+                    >
+                      pip install
+                    </button>
+                  </>
+                )}
+
+                <div className="w-px h-4 bg-border-subtle mx-1 shrink-0" />
+
+                {/* Mini Custom Command Input */}
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    if (!customCommandInput.trim()) return;
+                    sendCommandToTerminal(customCommandInput);
+                    setCommandHistory((prev) => {
+                      if (prev.includes(customCommandInput)) return prev;
+                      return [customCommandInput, ...prev];
+                    });
+                    setCustomCommandInput("");
+                  }}
+                  className="flex items-center gap-1.5 min-w-[200px] flex-1 max-w-xs shrink-0"
+                >
+                  <input
+                    type="text"
+                    placeholder="Run custom command..."
+                    value={customCommandInput}
+                    onChange={(e) => setCustomCommandInput(e.target.value)}
+                    className="w-full px-2 py-0.5 bg-surface-3 border border-border-subtle text-text-primary text-[10px] rounded focus:border-blue-500 outline-none transition-colors font-mono"
+                  />
+                </form>
+
+                {/* History dropdown */}
+                <div className="relative shrink-0">
+                  <button
+                    onClick={() => setShowHistoryDropdown((v) => !v)}
+                    className="p-1 rounded hover:bg-surface-hover text-text-secondary hover:text-text-primary text-[10px] flex items-center gap-1"
+                    title="Command History"
+                  >
+                    <HistoryIcon size={12} />
+                  </button>
+                  {showHistoryDropdown && (
+                    <div className="absolute bottom-6 right-0 w-48 bg-surface-3 border border-border-subtle rounded-lg shadow-xl py-1 z-30 font-mono text-[10px] max-h-40 overflow-y-auto">
+                      <div className="px-2 py-1 border-b border-border-subtle text-text-muted text-[9px] uppercase font-semibold">History</div>
+                      {commandHistory.length === 0 ? (
+                        <div className="px-2 py-1.5 text-text-muted italic">No history</div>
+                      ) : (
+                        commandHistory.map((cmd, i) => (
+                          <button
+                            key={i}
+                            onClick={() => {
+                              sendCommandToTerminal(cmd);
+                              setShowHistoryDropdown(false);
+                            }}
+                            className="w-full text-left px-2.5 py-1.5 hover:bg-surface-hover text-text-secondary hover:text-text-primary truncate"
+                          >
+                            {cmd}
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* Terminal content area */}
             <div className="flex-1 overflow-hidden relative">
@@ -2261,17 +2561,34 @@ Provide actionable, specific suggestions for each issue you find.`;
                 terminals.map((t) => (
                   <div
                     key={t.id}
-                    className="absolute inset-0"
+                    className="absolute inset-0 flex"
                     style={{
                       visibility: activeTerminalId === t.id ? "visible" : "hidden",
                       pointerEvents: activeTerminalId === t.id ? "auto" : "none",
                     }}
                   >
-                    <IDETerminal
-                      sessionId={t.sessionId}
-                      onSessionExpired={() => replaceTerminalSession(t.id)}
-                      onReady={(actions) => terminalActions.current.set(t.id, actions)}
-                    />
+                    {t.panes.map((pane, idx) => (
+                      <div
+                        key={pane.id}
+                        className="relative h-full flex-1 border-r border-border-subtle last:border-r-0"
+                      >
+                        <IDETerminal
+                          sessionId={pane.sessionId}
+                          onSessionExpired={() => replaceTerminalSession(t.id, pane.id)}
+                          onReady={(actions) => terminalActions.current.set(pane.id, actions)}
+                          onFocus={() => setFocusedSessionId(pane.sessionId)}
+                        />
+                        {t.panes.length > 1 && (
+                          <button
+                            onClick={() => closeTerminalPane(t.id, pane.id)}
+                            className="absolute top-2 right-2 p-1 rounded bg-black/60 hover:bg-red-600/80 text-white transition-colors z-20"
+                            title="Close split pane"
+                          >
+                            <X size={10} />
+                          </button>
+                        )}
+                      </div>
+                    ))}
                   </div>
                 ))
               )}
