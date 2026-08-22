@@ -1,5 +1,6 @@
 #
 from __future__ import annotations
+import json
 
 from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
@@ -91,7 +92,7 @@ async def stream_chat(
 
             full_response += token
 
-            yield f"data: {token}\n\n"
+            yield f"data: {json.dumps({'type': 'token', 'content': token})}\n\n"
 
         await memory.save(
 
@@ -102,7 +103,7 @@ async def stream_chat(
             assistant=full_response,
         )
 
-        yield "event: done\ndata: complete\n\n"
+        yield f"data: {json.dumps({'type': 'done', 'modified_files': []})}\n\n"
 
     return StreamingResponse(
 

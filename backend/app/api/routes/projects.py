@@ -1432,11 +1432,18 @@ async def project_chat_stream(
         full_response = ""
         seen_files: set[str] = set()
 
+        def _get_key(provider_name: str, env_var_name: str) -> str:
+            keys = _load_api_keys(project_id)
+            for k in keys:
+                if provider_name.lower() in k["provider"].lower():
+                    return k["key_value"]
+            return _os.getenv(env_var_name, "")
+
         yield f"data: {_json.dumps({'type': 'activity', 'step': 'Thinking…'})}\n\n"
 
         try:
             if "mistral" in model.lower():
-                api_key = _os.getenv("MISTRAL_API_KEY", "")
+                api_key = _get_key("mistral", "MISTRAL_API_KEY")
                 async with _httpx.AsyncClient(timeout=90) as client:
                     async with client.stream(
                         "POST",
@@ -1444,6 +1451,11 @@ async def project_chat_stream(
                         headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
                         json={"model": model, "messages": messages, "temperature": body.temperature, "stream": True},
                     ) as resp:
+                        if resp.status_code != 200:
+                            err_text = await resp.aread()
+                            Path("C:/projects/coding_assistaant/backend/chat_error.log").write_text(f"Mistral API Error {resp.status_code}: {err_text.decode(errors='ignore')}")
+                            yield f"data: {_json.dumps({'type': 'error', 'message': f'Mistral API Error {resp.status_code}: {err_text.decode(errors=\"ignore\")}'})}\n\n"
+                            return
                         async for line in resp.aiter_lines():
                             if not line.startswith("data: "):
                                 continue
@@ -1466,7 +1478,7 @@ async def project_chat_stream(
                                 pass
 
             elif "gpt" in model.lower() or "openai" in model.lower():
-                api_key = _os.getenv("OPENAI_API_KEY", "")
+                api_key = _get_key("openai", "OPENAI_API_KEY")
                 async with _httpx.AsyncClient(timeout=90) as client:
                     async with client.stream(
                         "POST",
@@ -1474,6 +1486,10 @@ async def project_chat_stream(
                         headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
                         json={"model": model, "messages": messages, "temperature": body.temperature, "stream": True},
                     ) as resp:
+                        if resp.status_code != 200:
+                            err_text = await resp.aread()
+                            yield f"data: {_json.dumps({'type': 'error', 'message': f'OpenAI API Error {resp.status_code}: {err_text.decode(errors=\"ignore\")}'})}\n\n"
+                            return
                         async for line in resp.aiter_lines():
                             if not line.startswith("data: "):
                                 continue
@@ -1496,7 +1512,7 @@ async def project_chat_stream(
                                 pass
 
             elif "claude" in model.lower() or "anthropic" in model.lower():
-                api_key = _os.getenv("ANTHROPIC_API_KEY", "")
+                api_key = _get_key("anthropic", "ANTHROPIC_API_KEY")
                 sys_msgs = [m["content"] for m in messages if m.get("role") == "system"]
                 chat_msgs = [m for m in messages if m.get("role") != "system"]
                 payload: dict = {"model": model, "max_tokens": 4096, "messages": chat_msgs, "stream": True}
@@ -1509,6 +1525,10 @@ async def project_chat_stream(
                         headers={"x-api-key": api_key, "anthropic-version": "2023-06-01", "Content-Type": "application/json"},
                         json=payload,
                     ) as resp:
+                        if resp.status_code != 200:
+                            err_text = await resp.aread()
+                            yield f"data: {_json.dumps({'type': 'error', 'message': f'Anthropic API Error {resp.status_code}: {err_text.decode(errors=\"ignore\")}'})}\n\n"
+                            return
                         async for line in resp.aiter_lines():
                             if not line.startswith("data: "):
                                 continue
@@ -1535,6 +1555,8 @@ async def project_chat_stream(
                 yield f"data: {_json.dumps({'type': 'token', 'content': reply})}\n\n"
 
         except Exception as exc:
+            import traceback
+            Path("C:/projects/coding_assistaant/backend/chat_error.log").write_text(traceback.format_exc())
             yield f"data: {_json.dumps({'type': 'error', 'message': str(exc)})}\n\n"
             return
 

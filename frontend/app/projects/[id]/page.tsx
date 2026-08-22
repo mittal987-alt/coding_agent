@@ -115,6 +115,7 @@ export default function WorkspacePage() {
   const [chatImages, setChatImages] = useState<string[]>([]);
   const [isTyping, setIsTyping] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
+  const abortControllerRef = useRef<AbortController | null>(null);
   // Current agent name shown in the navbar pill (parsed from latest activity)
   const [currentAgentLabel, setCurrentAgentLabel] = useState<string | null>(null);
 
@@ -837,15 +838,20 @@ export default function WorkspacePage() {
     ]);
 
     try {
-      const historyToSend = messages.map((msg) => ({ role: msg.role, content: msg.content, images: msg.images }));
+      const historyToSend = messages
+        .filter((msg) => !(msg.role === "assistant" && !msg.content.trim()))
+        .map((msg) => ({ role: msg.role, content: msg.content, images: msg.images }));
       historyToSend.push({ role: "user", content: userContent, images: chatImages.length > 0 ? chatImages : undefined });
+
+      abortControllerRef.current = new AbortController();
 
       const res = await fetch(`${apiBaseUrl}/projects/${projectId}/chat/stream`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        signal: abortControllerRef.current.signal,
         body: JSON.stringify({
           messages: historyToSend,
-          model: project?.llm_model || "gpt-4o",
+          model: project?.llm_model || "mistral-large-latest",
           temperature: 0.2,
           project_id: projectId,
         }),
@@ -908,7 +914,11 @@ export default function WorkspacePage() {
           }
         }
       }
-    } catch (error) {
+    } catch (error: any) {
+      if (error.name === "AbortError") {
+        console.log("Chat generation stopped by user");
+        return;
+      }
       console.error("Failed to fetch from LLM API:", error);
       const errorMsg: Message = {
         id: Date.now().toString(),
@@ -1054,7 +1064,7 @@ export default function WorkspacePage() {
             { role: "system", content: "You are an inline AI code editor. Return ONLY the raw modified code to replace the user's selection based on their prompt. Do not use markdown blocks, backticks, or conversational text. Just the code." },
             { role: "user", content: `Code:\n${selectedText}\n\nPrompt: ${inlineEditPrompt}` }
           ],
-          model: project?.llm_model || "gpt-4o",
+          model: project?.llm_model || "mistral-large-latest",
           temperature: 0.2,
           project_id: projectId,
         }),
@@ -1675,13 +1685,25 @@ Provide actionable, specific suggestions for each issue you find.`;
                     >
                       <Mic size={16} />
                     </button>
-                    <button
-                      onClick={handleSendMessage}
-                      disabled={(!chatInput.trim() && chatImages.length === 0) || isTyping}
-                      className="absolute right-3 bottom-3 p-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:hover:bg-blue-600 text-white rounded-lg transition-colors"
-                    >
-                      <Send size={16} />
-                    </button>
+                    {isTyping ? (
+                      <button
+                        onClick={() => abortControllerRef.current?.abort()}
+                        title="Stop generation"
+                        className="absolute right-3 bottom-3 p-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors flex items-center justify-center"
+                        style={{ width: "32px", height: "32px" }}
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="6" y="6" width="12" height="12" rx="2" ry="2"/></svg>
+                      </button>
+                    ) : (
+                      <button
+                        onClick={handleSendMessage}
+                        disabled={!chatInput.trim() && chatImages.length === 0}
+                        className="absolute right-3 bottom-3 p-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:hover:bg-blue-600 text-white rounded-lg transition-colors flex items-center justify-center"
+                        style={{ width: "32px", height: "32px" }}
+                      >
+                        <Send size={16} />
+                      </button>
+                    )}
                   </div>
                 </div>
 

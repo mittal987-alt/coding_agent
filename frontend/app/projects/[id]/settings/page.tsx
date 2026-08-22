@@ -51,9 +51,13 @@ const SECTIONS: Section[] = [
 ];
 
 const MODEL_OPTIONS = [
+  { value: "mistral-large-latest", label: "Mistral Large (Latest)" },
   { value: "mistral-large", label: "Mistral Large" },
+  { value: "mistral-small-latest", label: "Mistral Small (Latest)" },
   { value: "gpt-4o", label: "GPT-4o" },
+  { value: "gpt-4o-mini", label: "GPT-4o Mini" },
   { value: "claude-sonnet-4-6", label: "Claude Sonnet" },
+  { value: "gemini-1.5-pro", label: "Gemini 1.5 Pro" },
 ];
 
 // ---------------------------------------------------------------------------
@@ -223,7 +227,7 @@ export default function SettingsPage() {
         setProjectName(data.name || "");
         setProjectDescription((data as any).description || "");
         setRepoUrl(data.repository_url || "");
-        setLlmModel(data.llm_model || "mistral-large");
+        setLlmModel(data.llm_model || "mistral-large-latest");
       } catch {
         showToast("error", "Failed to load project.");
       } finally {

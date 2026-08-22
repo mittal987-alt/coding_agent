@@ -34,46 +34,52 @@ async def terminal_socket(
         await websocket.close(code=4001, reason="session_expired")
         return
 
-    async def read_terminal():
-        loop = asyncio.get_running_loop()
+    queue = asyncio.Queue()
+    session.subscribe(queue)
+
+    async def send_to_client():
         try:
             while True:
-                # session.read() uses non-blocking PTY reads with a short
-                # sleep, so it returns quickly even when there's no data.
-                # None means the process exited; empty string means no data
-                # yet — skip sending empty frames to the client.
-                output = await loop.run_in_executor(None, session.read)
-                if output is None:
-                    # Process exited — close the socket and stop reading.
-                    break
-                if output:
-                    await websocket.send_text(output)
+                data = await queue.get()
+                await websocket.send_text(data)
         except Exception:
             pass
-        finally:
-            try:
-                await websocket.close()
-            except Exception:
-                pass
 
-    task = asyncio.create_task(read_terminal())
+    sender_task = asyncio.create_task(send_to_client())
 
     try:
         while True:
             data = await websocket.receive_text()
-            # Resize control message: {"type":"resize","cols":N,"rows":N}
+            
+            # Handle JSON control messages (resize, custom IDE actions)
             try:
                 msg = json.loads(data)
-                if isinstance(msg, dict) and msg.get("type") == "resize":
-                    cols = int(msg.get("cols", 120))
-                    rows = int(msg.get("rows", 30))
-                    session.resize(cols, rows)
-                    continue
+                if isinstance(msg, dict):
+                    msg_type = msg.get("type")
+                    if msg_type == "resize":
+                        cols = int(msg.get("cols", 120))
+                        rows = int(msg.get("rows", 30))
+                        session.resize(cols, rows)
+                        continue
+                    elif msg_type == "open_file":
+                        # Example IDE Action intercept: broadcast back to the frontend
+                        # or dispatch to some backend file opener logic.
+                        path = msg.get("path")
+                        await websocket.send_text(json.dumps({
+                            "type": "ide_action",
+                            "action": "open_file",
+                            "path": path
+                        }))
+                        continue
             except (json.JSONDecodeError, ValueError):
                 pass
+                
+            # If it's not a handled JSON message, send it to the PTY
             session.write(data)
     except Exception:
         pass
     finally:
-        task.cancel()
-        terminal_manager.remove(session_id)
+        sender_task.cancel()
+        session.unsubscribe(queue)
+        # Note: We do NOT call `terminal_manager.remove(session_id)` here anymore.
+        # This allows the terminal to survive refreshes and supports multiplayer mode.

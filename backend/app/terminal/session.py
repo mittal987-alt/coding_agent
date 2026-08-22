@@ -1,6 +1,8 @@
 import time
 import uuid
 import winpty
+import asyncio
+from collections import deque
 
 
 class TerminalSession:
@@ -9,6 +11,11 @@ class TerminalSession:
 
         self.id = str(uuid.uuid4())
         self._closed = False
+        
+        self.subscribers = []
+        # Store up to ~50k characters for scrollback
+        self.scrollback = ""
+        self._read_task = None
 
         # Larger PTY size reduces line-wrap frequency which decreases the
         # volume of ANSI cursor-movement bytes npm/other CLIs generate.
@@ -123,10 +130,53 @@ class TerminalSession:
         except Exception:
             return None
 
+    def subscribe(self, queue: asyncio.Queue) -> None:
+        if queue not in self.subscribers:
+            self.subscribers.append(queue)
+            # Instantly send scrollback history to the new subscriber
+            if self.scrollback:
+                queue.put_nowait(self.scrollback)
+
+    def unsubscribe(self, queue: asyncio.Queue) -> None:
+        if queue in self.subscribers:
+            self.subscribers.remove(queue)
+
+    def start_reading(self) -> None:
+        """Launch background task to constantly drain PTY and push to subscribers."""
+        if self._read_task is not None:
+            return
+            
+        async def _read_loop():
+            loop = asyncio.get_running_loop()
+            try:
+                while not self._closed:
+                    data = await loop.run_in_executor(None, self.read)
+                    if data is None:
+                        break
+                    if data:
+                        # Append to scrollback
+                        self.scrollback += data
+                        if len(self.scrollback) > 50000:
+                            self.scrollback = self.scrollback[-50000:]
+                        # Broadcast to all connected clients
+                        for q in list(self.subscribers):
+                            try:
+                                q.put_nowait(data)
+                            except Exception:
+                                pass
+            except Exception:
+                pass
+            finally:
+                self.close()
+
+        self._read_task = asyncio.create_task(_read_loop())
+
     def close(self) -> None:
         if self._closed:
             return
         self._closed = True
+        if self._read_task:
+            self._read_task.cancel()
         try:
             self.pty.close()
         except Exception:

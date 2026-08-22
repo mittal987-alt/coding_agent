@@ -25,6 +25,7 @@ class TerminalManager:
             env_vars=env_vars,
         )
 
+        session.start_reading()
         self.sessions[session.id] = session
         return session
 
