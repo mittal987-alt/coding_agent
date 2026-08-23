@@ -41,7 +41,7 @@ class Settings(BaseSettings):
 
     HOST: str = "0.0.0.0"
 
-    PORT: int = 8000
+    PORT: int = 8080
 
     API_PREFIX: str = "/api/v1"
 
@@ -132,7 +132,10 @@ class Settings(BaseSettings):
     ALLOWED_ORIGINS: list[str] = [
         "http://localhost:3000",
         "http://127.0.0.1:3000",
-        "http://localhost:8000",
+        "http://localhost:3001",
+        "http://127.0.0.1:3001",
+        "http://localhost:8080",
+        "http://127.0.0.1:8080",
     ]
 
     CORS_ALLOW_CREDENTIALS: bool = True

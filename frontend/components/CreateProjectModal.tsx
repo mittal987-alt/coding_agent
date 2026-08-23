@@ -1,4 +1,5 @@
 import React, { useRef, useState } from "react";
+import { apiBaseUrl } from "@/lib/api";
 import { X, Loader2, FolderOpen, GitFork } from "lucide-react";
 import { ProjectCreate } from "@/services/projects";
 
@@ -134,7 +135,7 @@ export const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
 
     formData.append("paths", JSON.stringify(relativePaths));
 
-    const url = `http://localhost:8000/api/v1/projects/${projectId}/upload-folder`;
+    const url = `${apiBaseUrl}/projects/${projectId}/upload-folder`;
 
     let res: Response;
     try {
@@ -195,7 +196,7 @@ export const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
     try {
       if (sourceMode === "folder") {
         // 1. Create the project first (no repository_url — local folder mode)
-        const createUrl = "http://localhost:8000/api/v1/projects/";
+        const createUrl = `${apiBaseUrl}/projects/`;
         const createRes = await fetch(createUrl, {
           method: "POST",
           headers: { "Content-Type": "application/json" },

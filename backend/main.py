@@ -1,4 +1,5 @@
 import app.models  # Register all SQLAlchemy models first
+import uvicorn
 
 from app.bootstrap.startup import lifespan
 from fastapi import FastAPI
@@ -18,8 +19,14 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=container.settings.ALLOWED_ORIGINS,
-    allow_credentials=container.settings.CORS_ALLOW_CREDENTIALS,
+    allow_origins=[
+        "http://localhost:3000",
+        "http://localhost:3001",
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:3001",
+        *container.settings.ALLOWED_ORIGINS,
+    ],
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -33,3 +40,12 @@ async def root():
         "message": "AI Software Engineer API",
         "version": container.settings.APP_VERSION,
     }
+
+
+if __name__ == "__main__":
+    uvicorn.run(
+        "main:app",
+        host=container.settings.HOST,
+        port=container.settings.PORT,
+        reload=container.settings.is_development,
+    )

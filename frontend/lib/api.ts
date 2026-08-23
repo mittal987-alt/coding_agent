@@ -6,7 +6,8 @@ const apiClient = axios.create({
   headers: {
     "Content-Type": "application/json",
   },
-  timeout: 10000,
+  // 30s to handle Neon serverless cold-starts (~5-9s on first request after inactivity)
+  timeout: 30000,
   // Prevent silent failures when axios doesn't re-POST on 307 redirects.
   // All URLs should include trailing slashes to match FastAPI routes directly.
   maxRedirects: 0,

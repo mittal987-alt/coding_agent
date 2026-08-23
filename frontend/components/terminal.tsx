@@ -1,4 +1,5 @@
 "use client";
+import { wsBaseUrl } from "@/lib/api";
 
 import { useEffect, useRef, useState } from "react";
 import { Terminal } from "xterm";
@@ -95,7 +96,7 @@ export default function IDETerminal({
 
    
 
-    const socket = new WebSocket(`ws://localhost:8000/ws/${sessionId}`);
+    const socket = new WebSocket(`${wsBaseUrl}/ws/${sessionId}`);
 
     // Send the current terminal dimensions to the backend as soon as the
     // WebSocket opens so the PTY cols/rows match what xterm is rendering.

@@ -1,4 +1,5 @@
 "use client";
+import { apiBaseUrl } from "@/lib/api";
 
 import { useState, useEffect, useCallback } from "react";
 import { DiffEditor } from "@monaco-editor/react";
@@ -56,7 +57,7 @@ export default function DiffViewer({
       try {
         // Fetch current (working copy) content
         const modRes = await fetch(
-          `http://localhost:8000/api/v1/projects/${projectId}/files/content?path=${encodeURIComponent(filePath)}`
+          `${apiBaseUrl}/projects/${projectId}/files/content?path=${encodeURIComponent(filePath)}`
         );
         const modJson = await modRes.json();
         if (modJson.success && modJson.data?.content !== undefined) {
@@ -67,7 +68,7 @@ export default function DiffViewer({
 
         // Fetch original (git HEAD)
         const origRes = await fetch(
-          `http://localhost:8000/api/v1/projects/${projectId}/git/file?path=${encodeURIComponent(filePath)}`
+          `${apiBaseUrl}/projects/${projectId}/git/file?path=${encodeURIComponent(filePath)}`
         );
         const origJson = await origRes.json();
         if (origJson.success) {
@@ -110,7 +111,7 @@ export default function DiffViewer({
     setIsActioning(true);
     try {
       const res = await fetch(
-        `http://localhost:8000/api/v1/projects/${projectId}/git/revert-file`,
+        `${apiBaseUrl}/projects/${projectId}/git/revert-file`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },

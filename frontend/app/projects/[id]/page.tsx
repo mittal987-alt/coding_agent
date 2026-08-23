@@ -841,7 +841,16 @@ export default function WorkspacePage() {
       const historyToSend = messages
         .filter((msg) => !(msg.role === "assistant" && !msg.content.trim()))
         .map((msg) => ({ role: msg.role, content: msg.content, images: msg.images }));
-      historyToSend.push({ role: "user", content: userContent, images: chatImages.length > 0 ? chatImages : undefined });
+        
+      let contextStr = "";
+      if (selectedFile && selectedFile !== "__preview__" && fileContents[selectedFile]) {
+        contextStr += `\n\n[Context: Currently active file - ${selectedFile}]\n\`\`\`\n${fileContents[selectedFile]}\n\`\`\``;
+      }
+      if (isSplitMode && secondarySelectedFile && fileContents[secondarySelectedFile]) {
+        contextStr += `\n\n[Context: Secondary active file - ${secondarySelectedFile}]\n\`\`\`\n${fileContents[secondarySelectedFile]}\n\`\`\``;
+      }
+      
+      historyToSend.push({ role: "user", content: userContent + contextStr, images: chatImages.length > 0 ? chatImages : undefined });
 
       abortControllerRef.current = new AbortController();
 
@@ -1734,8 +1743,17 @@ Provide actionable, specific suggestions for each issue you find.`;
             <Panel defaultSize={60} minSize={30}>
               {/* Center Panel: Editor */}
               <section className="h-full flex flex-col min-w-0 bg-gray-50 dark:bg-[#0e0e0e]">
+                <div className="flex-1 relative overflow-hidden flex">
+                  {/* Primary editor pane */}
+                  <div
+                    className={`relative overflow-hidden flex flex-col flex-1 ${isSplitMode ? "border-r border-border-subtle" : ""}`}
+                    onClick={() => setActiveEditorPane("primary")}
+                  >
+                    {isSplitMode && (
+                      <div className={`absolute top-0 left-0 right-0 h-0.5 z-10 transition-all ${activeEditorPane === "primary" ? "bg-accent" : "bg-transparent"}`} />
+                    )}
                 <div
-                  className="h-10 border-b border-gray-800 flex items-center overflow-x-auto overflow-y-hidden no-scrollbar"
+                  className="h-10 border-b border-gray-800 flex items-center overflow-x-auto overflow-y-hidden no-scrollbar shrink-0"
                   style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
                 >
                   {/* Save button — only when a file is open */}
@@ -1869,15 +1887,7 @@ Provide actionable, specific suggestions for each issue you find.`;
                   </div>
                 )}
 
-                <div className="flex-1 relative overflow-hidden flex">
-                  {/* Primary editor pane */}
-                  <div
-                    className={`relative overflow-hidden flex-1 ${isSplitMode ? "border-r border-border-subtle" : ""}`}
-                    onClick={() => setActiveEditorPane("primary")}
-                  >
-                    {isSplitMode && (
-                      <div className={`absolute top-0 left-0 right-0 h-0.5 z-10 transition-all ${activeEditorPane === "primary" ? "bg-accent" : "bg-transparent"}`} />
-                    )}
+                    <div className="flex-1 relative overflow-hidden">
                     {selectedFile === "__preview__" ? (
                       <PreviewPanel defaultPort={3000} />
                     ) : selectedFile ? (
@@ -2012,31 +2022,67 @@ Provide actionable, specific suggestions for each issue you find.`;
                         </div>
                       </div>
                     )}
+                    </div>
                   </div>
 
                   {/* Secondary editor pane (split mode) */}
                   {isSplitMode && (
                     <div
-                      className="relative flex-1 overflow-hidden"
+                      className="relative flex-1 overflow-hidden flex flex-col"
                       onClick={() => setActiveEditorPane("secondary")}
                     >
                       <div className={`absolute top-0 left-0 right-0 h-0.5 z-10 transition-all ${activeEditorPane === "secondary" ? "bg-accent" : "bg-transparent"}`} />
-                      {/* Secondary pane header */}
-                      <div className="h-8 bg-surface-1 border-b border-border-subtle flex items-center px-3 gap-2 text-[11px] text-text-muted">
-                        <FileCode size={11} className="shrink-0" />
-                        <span className="truncate flex-1">{secondarySelectedFile ? secondarySelectedFile.split("/").pop() : "No file"}</span>
-                        <button
-                          onClick={(e) => { e.stopPropagation(); setIsSplitMode(false); setSecondarySelectedFile(null); setActiveEditorPane("primary"); }}
-                          className="hover:text-text-primary p-0.5 rounded hover:bg-surface-hover transition-colors"
-                          title="Close split"
-                        >
-                          <X size={11} />
-                        </button>
+                      
+                      {/* Secondary tab bar (single tab) */}
+                      <div className="h-10 border-b border-gray-800 flex items-center overflow-x-auto overflow-y-hidden no-scrollbar shrink-0" style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}>
+                        {secondarySelectedFile ? (
+                          <div className="flex items-center gap-2 px-3 h-full cursor-pointer border-r border-border-subtle shrink-0 whitespace-nowrap bg-surface-2 text-text-primary border-t-2 border-t-accent">
+                            <FileCode size={13} className={`shrink-0 ${fileIconColor(secondarySelectedFile.split("/").pop() || "")}`} />
+                            <span className="text-xs">{secondarySelectedFile.split("/").pop()}</span>
+                            {dirtyTabs.has(secondarySelectedFile) && (
+                              <span className="w-1.5 h-1.5 rounded-full bg-yellow-400 shrink-0" title="Unsaved changes" />
+                            )}
+                            <button
+                              onClick={(e) => { e.stopPropagation(); setIsSplitMode(false); setSecondarySelectedFile(null); setActiveEditorPane("primary"); }}
+                              className="shrink-0 opacity-50 hover:opacity-100 hover:text-white transition-opacity ml-1"
+                              title="Close split pane"
+                            >
+                              <X size={12} />
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="px-4 text-sm text-gray-500 shrink-0">
+                            No file selected
+                          </div>
+                        )}
                       </div>
+
+                      {/* Secondary breadcrumb bar */}
+                      {secondarySelectedFile && (
+                        <div className="h-7 bg-surface-1 border-b border-border-subtle flex items-center px-3 gap-1 text-[11px] text-text-muted shrink-0 overflow-x-auto no-scrollbar">
+                          {secondarySelectedFile.split("/").map((segment, i, arr) => (
+                            <React.Fragment key={i}>
+                              {i < arr.length - 1 ? (
+                                <>
+                                  <span className="hover:text-text-primary cursor-pointer transition-colors">{segment}</span>
+                                  <span className="text-border-subtle mx-0.5 select-none">/</span>
+                                </>
+                              ) : (
+                                <span className="text-text-primary font-medium">{segment}</span>
+                              )}
+                            </React.Fragment>
+                          ))}
+                          {dirtyTabs.has(secondarySelectedFile) && (
+                            <span className="ml-1.5 text-yellow-400 text-[9px] font-bold">● UNSAVED</span>
+                          )}
+                        </div>
+                      )}
+
                       {secondarySelectedFile ? (
-                        <Editor
-                          height="calc(100% - 2rem)"
-                          language={getLanguageFromPath(secondarySelectedFile)}
+                        <div className="flex-1 overflow-hidden relative">
+                          <Editor
+                            height="100%"
+                            language={getLanguageFromPath(secondarySelectedFile)}
                           theme="vs-dark"
                           value={fileContents[secondarySelectedFile] || ""}
                           onChange={(value) => {
@@ -2064,6 +2110,7 @@ Provide actionable, specific suggestions for each issue you find.`;
                           }}
                           loading={<div className="p-6 text-gray-500">Loading editor...</div>}
                         />
+                        </div>
                       ) : (
                         <div className="h-full flex flex-col items-center justify-center text-center px-8">
                           <SplitSquareHorizontal size={36} className="text-gray-700 mb-3" />

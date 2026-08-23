@@ -53,7 +53,7 @@ def _find_project_root(repo_path: Path) -> Path:
 
 
 @router.post("/projects/{project_id}")
-def create_terminal(
+async def create_terminal(
     project_id: str,
     db: Session = Depends(get_db),
 ):

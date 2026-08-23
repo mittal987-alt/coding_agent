@@ -10,15 +10,25 @@ if _database_url:
         _database_url,
         echo=settings.DEBUG,
 
-        # Fixes dropped SSL connections (Neon)
-        pool_pre_ping=True,
-
-        # Recycle connections every 5 minutes
+        # Recycle connections every 5 minutes to handle Neon's idle timeout
         pool_recycle=300,
 
-        # Optional but recommended
         pool_size=5,
         max_overflow=10,
+
+        # Fail fast if pool is exhausted (seconds)
+        pool_timeout=6,
+
+        # psycopg2 connection settings:
+        # - connect_timeout: abort if host is unreachable within 10s
+        # - keepalives: detect stale Neon connections quickly
+        connect_args={
+            "connect_timeout": 10,
+            "keepalives": 1,
+            "keepalives_idle": 10,
+            "keepalives_interval": 5,
+            "keepalives_count": 3,
+        },
     )
 
     SessionLocal = sessionmaker(

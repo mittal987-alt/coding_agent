@@ -37,7 +37,9 @@ Rules:
 - If the user is just asking a question (no file creation needed), respond with:
   {"message": "your answer here", "files": []}
 - File paths must be relative (e.g. "app.py", "src/utils.py"). Never use absolute paths.
-- Always write complete, working code. Never use placeholders like "# TODO" or "...".
+- CRITICAL: When modifying an EXISTING file, you MUST output the ENTIRE, COMPLETE file contents in the `content` field!
+- DO NOT output partial snippets. DO NOT truncate the file. DO NOT use placeholders like "# rest of code here" or "...".
+- If you return a partial file, it will overwrite the user's file and destroy their existing code. You must merge your changes with the existing code and return the FULL file.
 - ONLY return valid JSON. Do not include any text outside the JSON object.
 """
 
@@ -60,11 +62,11 @@ def _extract_json_from_text(text: str) -> Optional[dict]:
     try:
         return json.loads(text)
     except Exception:
-        # Try to find a JSON object within the text
-        match = re.search(r'\{.*\}', text, re.DOTALL)
+        # Try to find a JSON object or array within the text
+        match = re.search(r'(\{.*\}|\[.*\])', text, re.DOTALL)
         if match:
             try:
-                return json.loads(match.group())
+                return json.loads(match.group(1))
             except Exception:
                 pass
     return None
@@ -164,6 +166,9 @@ async def chat_endpoint(payload: ChatRequestPayload):
         if parsed and isinstance(parsed, dict):
             message = parsed.get("message", raw_text)
             files_to_write = parsed.get("files", [])
+        elif parsed and isinstance(parsed, list):
+            message = raw_text
+            files_to_write = parsed
         else:
             # Fallback: treat entire output as the message with no file writes
             message = raw_text
@@ -426,8 +431,14 @@ async def chat_stream_endpoint(payload: ChatRequestPayload):
         modified_files: List[str] = []
         if project_id and full_response:
             parsed = _extract_json_from_text(full_response)
-            if parsed and isinstance(parsed, dict):
-                files_to_write = parsed.get("files", [])
+            if parsed:
+                if isinstance(parsed, dict):
+                    files_to_write = parsed.get("files", [])
+                elif isinstance(parsed, list):
+                    files_to_write = parsed
+                else:
+                    files_to_write = []
+                    
                 if files_to_write:
                     modified_files = _write_project_files(project_id, files_to_write)
 

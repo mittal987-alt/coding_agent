@@ -1,4 +1,5 @@
 "use client";
+import { apiBaseUrl } from "@/lib/api";
 
 import React, { useEffect, useState } from "react";
 import { Brain, Loader2, Database, Trash2, ArrowRight } from "lucide-react";
@@ -21,7 +22,7 @@ export default function AgentMemoryPanel({ projectId }: { projectId: string }) {
       setIsLoading(true);
       setError(null);
       try {
-        const res = await fetch(`http://localhost:8000/api/v1/memory/session/${projectId}`);
+        const res = await fetch(`${apiBaseUrl}/memory/session/${projectId}`);
         const data = await res.json();
         if (mounted) {
           // The API returns an array directly, or an ApiResponse format depending on backend.
@@ -52,7 +53,7 @@ export default function AgentMemoryPanel({ projectId }: { projectId: string }) {
     if (!confirm("Are you sure you want to clear the agent's memory for this project?")) return;
     setIsLoading(true);
     try {
-      await fetch(`http://localhost:8000/api/v1/memory/session/${projectId}`, {
+      await fetch(`${apiBaseUrl}/memory/session/${projectId}`, {
         method: "DELETE",
       });
       setMemories([]);
