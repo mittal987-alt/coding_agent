@@ -1276,19 +1276,27 @@ Provide actionable, specific suggestions for each issue you find.`;
 
   if (isLoading) {
     return (
-      <div className="h-screen bg-gray-50 dark:bg-black flex items-center justify-center">
-        <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+      <div className="h-screen bg-background flex flex-col items-center justify-center gap-4">
+        <div className="w-10 h-10 rounded-xl bg-surface-2 border border-border-subtle flex items-center justify-center">
+          <Loader2 className="w-5 h-5 animate-spin text-accent" />
+        </div>
+        <p className="text-xs text-text-muted">Loading workspace…</p>
       </div>
     );
   }
 
   if (!project) {
     return (
-      <div className="h-screen bg-gray-50 dark:bg-black flex flex-col items-center justify-center p-8 text-center">
-        <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">Project not found</h1>
-        <p className="text-gray-500 mb-6">The project you are looking for does not exist or has been deleted.</p>
-        <Link href="/projects" className="text-blue-600 hover:underline">
-          &larr; Back to Projects
+      <div className="h-screen bg-background flex flex-col items-center justify-center p-8 text-center gap-4">
+        <div className="w-12 h-12 rounded-xl bg-surface-2 border border-border-subtle flex items-center justify-center">
+          <FileCode size={22} className="text-text-muted" />
+        </div>
+        <div>
+          <h1 className="text-base font-semibold text-text-primary mb-1">Project not found</h1>
+          <p className="text-xs text-text-muted">The project you are looking for does not exist or has been deleted.</p>
+        </div>
+        <Link href="/projects" className="text-xs text-accent hover:text-accent-hover transition-colors flex items-center gap-1.5">
+          <ArrowLeft size={12} /> Back to Projects
         </Link>
       </div>
     );
@@ -1305,23 +1313,23 @@ Provide actionable, specific suggestions for each issue you find.`;
       <input {...getInputProps()} />
       {/* Drag & Drop Overlay */}
       {isDragActive && (
-        <div className="absolute inset-0 z-50 bg-blue-500/20 backdrop-blur-[2px] flex items-center justify-center border-4 border-blue-500 border-dashed m-2 rounded-xl transition-all">
-          <div className="bg-gray-900 text-white px-6 py-4 rounded-xl shadow-2xl flex flex-col items-center gap-3 animate-in fade-in zoom-in duration-200">
-            <div className="p-3 bg-blue-600 rounded-full">
-              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></svg>
+        <div className="absolute inset-0 z-50 drop-overlay m-2 rounded-xl flex items-center justify-center transition-all animate-fade-scale-in">
+          <div className="glass-panel rounded-2xl px-8 py-6 flex flex-col items-center gap-4">
+            <div className="w-12 h-12 rounded-xl bg-accent/15 border border-accent/30 flex items-center justify-center">
+              <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#a5b4fc" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></svg>
             </div>
             <div className="text-center">
-              <h3 className="font-bold text-lg">Drop files to upload</h3>
-              <p className="text-sm text-gray-400 mt-1">Files and folders will be added to the project workspace</p>
+              <h3 className="font-semibold text-sm text-text-primary">Drop files to upload</h3>
+              <p className="text-xs text-text-muted mt-1">Files and folders will be added to the project workspace</p>
             </div>
           </div>
         </div>
       )}
       
       {isUploading && (
-        <div className="absolute top-16 right-4 z-50 bg-gray-900 border border-gray-700 shadow-xl rounded-lg px-4 py-3 flex items-center gap-3 animate-in slide-in-from-right-8">
-          <Loader2 size={16} className="animate-spin text-blue-400" />
-          <span className="text-sm font-medium text-white">Uploading files...</span>
+        <div className="absolute top-16 right-4 z-50 glass-panel rounded-xl px-4 py-2.5 flex items-center gap-3 animate-slide-in">
+          <Loader2 size={14} className="animate-spin text-accent" />
+          <span className="text-xs font-medium text-text-primary">Uploading files…</span>
         </div>
       )}
 
@@ -1332,156 +1340,125 @@ Provide actionable, specific suggestions for each issue you find.`;
       `}</style>
 
       {/* Top Navbar */}
-      <header className="h-14 border-b border-border-subtle glass flex items-center px-4 shrink-0 justify-between z-10 sticky top-0">
-        <div className="flex items-center gap-4">
-          <Link href="/projects" className="text-gray-500 hover:text-gray-900 dark:hover:text-white transition-colors">
-            <ArrowLeft size={18} />
+      <header className="h-12 navbar-glass flex items-center px-4 shrink-0 justify-between z-10 sticky top-0">
+        <div className="flex items-center gap-3">
+          <Link
+            href="/projects"
+            className="icon-btn"
+            title="Back to projects"
+          >
+            <ArrowLeft size={15} />
           </Link>
-          <div className="flex flex-col">
-            <h1 className="text-sm font-semibold text-gray-900 dark:text-white">
+          <div className="w-px h-4 bg-border-subtle" />
+          <div className="flex flex-col leading-tight">
+            <h1 className="text-[13px] font-semibold text-text-primary tracking-tight">
               {project.name}
             </h1>
-            <span className="text-xs text-gray-500 dark:text-gray-400">
+            <span className="text-[10px] text-text-muted font-mono tracking-tight">
               {project.repository_url || "Local Workspace"}
             </span>
           </div>
         </div>
-        <div className="flex items-center gap-3">
-          {/* Unified status pill: agent state + model, one place to look */}
-          <div className={`flex items-center gap-2 text-xs px-3 py-1.5 rounded-full transition-all duration-300 ${
-              isTyping
-                ? "bg-blue-950/70 border border-blue-700/40 text-blue-300"
-                : "bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400"
-            }`}>
-            <span className={`w-2 h-2 rounded-full shrink-0 ${
-              isTyping ? "bg-blue-400 animate-pulse" : "bg-green-500"
-            }`} />
+
+        <div className="flex items-center gap-2">
+          {/* Agent status pill */}
+          <div className={`agent-pill ${isTyping ? "active" : ""}`}>
+            <span
+              className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                isTyping ? "bg-accent animate-pulse-dot" : "bg-emerald-500"
+              }`}
+            />
             {isTyping ? (
-              <span className="flex items-center gap-1.5 font-medium">
-                <Brain size={11} className="text-blue-400" />
+              <span className="flex items-center gap-1.5">
+                <Brain size={10} className="text-indigo-300" />
                 {currentAgentLabel
-                  ? currentAgentLabel.length > 30
-                    ? currentAgentLabel.slice(0, 28) + "…"
+                  ? currentAgentLabel.length > 28
+                    ? currentAgentLabel.slice(0, 26) + "…"
                     : currentAgentLabel
                   : "Agent Working…"}
               </span>
             ) : (
               <span>Agent Idle</span>
             )}
-            <span className="w-px h-3 bg-gray-300 dark:bg-gray-700 mx-1" />
-            <span className="text-blue-500 dark:text-blue-400 font-medium uppercase tracking-wide">
-              {project.llm_model || "Mistral"}
+            <span className="w-px h-3 bg-border-subtle" />
+            <span className="text-accent font-semibold uppercase tracking-widest text-[10px]">
+              {project.llm_model?.split("-")[0] || "Mistral"}
             </span>
           </div>
-          <div className="flex items-center gap-1 bg-gray-100 dark:bg-gray-800 rounded-lg p-1">
+
+          {/* Layout toggles */}
+          <div className="flex items-center gap-0.5 bg-surface-2 rounded-lg p-0.5 border border-border-subtle">
             <button
               onClick={toggleChatPanel}
-              title="Toggle AI Assistant panel"
-              className={`p-1.5 rounded-md transition-colors ${isChatCollapsed
-                  ? "text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
-                  : "bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                }`}
+              title="Toggle AI Assistant panel (Ctrl+B)"
+              className={`icon-btn ${!isChatCollapsed ? "active" : ""}`}
             >
-              <PanelLeft size={15} />
+              <PanelLeft size={14} />
             </button>
             <button
               onClick={toggleTerminalPanel}
-              title="Toggle Terminal panel"
-              className={`p-1.5 rounded-md transition-colors ${isTerminalCollapsed
-                  ? "text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
-                  : "bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                }`}
+              title="Toggle Terminal panel (Ctrl+`)"
+              className={`icon-btn ${!isTerminalCollapsed ? "active" : ""}`}
             >
-              <PanelBottom size={15} />
+              <PanelBottom size={14} />
             </button>
             <button
               onClick={toggleRepoPanel}
-              title="Toggle Repository panel"
-              className={`p-1.5 rounded-md transition-colors ${isRepoCollapsed
-                  ? "text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
-                  : "bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                }`}
+              title="Toggle Repository panel (Ctrl+E)"
+              className={`icon-btn ${!isRepoCollapsed ? "active" : ""}`}
             >
-              <PanelRight size={15} />
+              <PanelRight size={14} />
             </button>
           </div>
 
-          {/* Phase 5: AI Code Review */}
+          <div className="w-px h-5 bg-border-subtle" />
+
+          {/* Code Review */}
           <button
             onClick={handleCodeReview}
             disabled={isReviewing}
             title="AI Code Review — scan open files for bugs & improvements"
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
-              isReviewing
-                ? "bg-purple-600/20 text-purple-400 cursor-not-allowed"
-                : "bg-purple-600/10 text-purple-400 hover:bg-purple-600/20 hover:text-purple-300"
-            }`}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-[11px] font-medium transition-all border border-border-subtle text-text-secondary hover:text-text-primary hover:bg-surface-hover disabled:opacity-40 disabled:cursor-not-allowed"
           >
             {isReviewing ? (
-              <Loader2 size={13} className="animate-spin" />
+              <Loader2 size={12} className="animate-spin text-accent" />
             ) : (
-              <Brain size={13} className={isReviewing ? "" : ""} />
+              <Brain size={12} className="text-violet-400" />
             )}
-            {isReviewing ? "Reviewing..." : "Code Review"}
+            {isReviewing ? "Reviewing…" : "Code Review"}
           </button>
 
-          {/* Feature 7: Run project */}
+          {/* Run button — most prominent */}
           <button
             onClick={handleRunProject}
             disabled={isRunning}
             title="Run project"
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-xs font-medium transition-colors disabled:opacity-50"
+            className="run-btn flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[11px]"
           >
-            {isRunning ? <Loader2 size={13} className="animate-spin" /> : <Play size={13} />}
+            {isRunning ? <Loader2 size={12} className="animate-spin" /> : <Play size={12} />}
             Run
           </button>
 
-          {/* Feature 8: Rebuild AI search index */}
-          <button
-            onClick={handleIndexProject}
-            disabled={isIndexing}
-            title="Rebuild AI search index"
-            className="p-2 text-gray-500 hover:text-gray-900 dark:hover:text-white transition-colors disabled:opacity-50"
-          >
-            {isIndexing ? <Loader2 size={16} className="animate-spin" /> : <Database size={16} />}
-          </button>
+          <div className="w-px h-5 bg-border-subtle" />
 
-          {/* Feature 6: Commit history & rollback */}
-          <button
-            onClick={() => setIsHistoryOpen(true)}
-            title="Commit history & rollback"
-            className="p-2 text-gray-500 hover:text-gray-900 dark:hover:text-white transition-colors"
-          >
-            <HistoryIcon size={16} />
+          {/* Secondary actions */}
+          <button onClick={handleIndexProject} disabled={isIndexing} title="Rebuild AI search index" className="icon-btn disabled:opacity-40">
+            {isIndexing ? <Loader2 size={15} className="animate-spin" /> : <Database size={15} />}
           </button>
-
-          <button
-            onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-            title="Toggle Theme"
-            className="p-2 text-gray-500 hover:text-gray-900 dark:hover:text-white transition-colors"
-          >
-            {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
+          <button onClick={() => setIsHistoryOpen(true)} title="Commit history & rollback" className="icon-btn">
+            <HistoryIcon size={15} />
           </button>
-          <button
-            onClick={() => setIsDashboardOpen(true)}
-            title="Project Dashboard"
-            className="p-2 text-gray-500 hover:text-gray-900 dark:hover:text-white transition-colors"
-          >
-            <BarChart3 size={16} />
+          <button onClick={() => setTheme(theme === "dark" ? "light" : "dark")} title="Toggle Theme" className="icon-btn">
+            {theme === "dark" ? <Sun size={15} /> : <Moon size={15} />}
           </button>
-          <button
-            onClick={() => setIsShortcutsOpen(true)}
-            title="Keyboard shortcuts (?)"
-            className="p-2 text-gray-500 hover:text-gray-900 dark:hover:text-white transition-colors text-base font-bold leading-none"
-          >
+          <button onClick={() => setIsDashboardOpen(true)} title="Project Dashboard" className="icon-btn">
+            <BarChart3 size={15} />
+          </button>
+          <button onClick={() => setIsShortcutsOpen(true)} title="Keyboard shortcuts (?)" className="icon-btn text-[13px] font-semibold">
             ?
           </button>
-          <button
-            onClick={() => setIsSettingsOpen(true)}
-            title="Settings"
-            className="p-2 text-gray-500 hover:text-gray-900 dark:hover:text-white transition-colors"
-          >
-            <Settings size={18} />
+          <button onClick={() => setIsSettingsOpen(true)} title="Settings" className="icon-btn">
+            <Settings size={15} />
           </button>
         </div>
       </header>
@@ -1501,42 +1478,51 @@ Provide actionable, specific suggestions for each issue you find.`;
               onExpand={() => setIsChatCollapsed(false)}
             >
               {/* Left Panel: Chat Interface */}
-              <aside className="h-full border-r border-border-subtle glass flex flex-col">
-                <div className="h-12 border-b border-gray-200 dark:border-gray-800 flex items-center px-4 gap-3">
-                  <h2 className="text-sm font-semibold flex items-center gap-2">
-                    <MessageSquare size={16} />
-                    AI Assistant
-                  </h2>
+              <aside className="h-full border-r border-border-subtle bg-surface-1 flex flex-col">
+                {/* Panel header */}
+                <div className="h-10 border-b border-border-subtle flex items-center px-4 gap-3 shrink-0">
+                  <div className="w-6 h-6 rounded-lg bg-accent/15 border border-accent/20 flex items-center justify-center">
+                    <MessageSquare size={12} className="text-accent" />
+                  </div>
+                  <h2 className="text-[11px] font-semibold text-text-primary uppercase tracking-widest">AI Assistant</h2>
                   {isReviewing && (
-                    <span className="ml-auto flex items-center gap-1.5 text-[10px] text-purple-400 animate-pulse">
-                      <Brain size={11} />
-                      Reviewing code...
+                    <span className="ml-auto flex items-center gap-1 text-[10px] text-violet-400 animate-pulse">
+                      <Brain size={10} />
+                      Reviewing…
                     </span>
                   )}
                 </div>
                 <div className="flex-1 overflow-y-auto p-4 space-y-4 scroll-smooth">
                   {messages.map((msg) => (
-                    <div key={msg.id} className={`flex gap-3 ${msg.role === "user" ? "flex-row-reverse" : ""}`}>
-                      <div
-                        className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 text-white text-xs font-bold ${msg.role === "user" ? "bg-purple-600" : "bg-blue-600"
-                          }`}
-                      >
-                        {msg.role === "user" ? "U" : "AI"}
-                      </div>
-                      <div
-                        className={`rounded-2xl p-3 text-sm max-w-[85%] ${msg.role === "user"
-                            ? "bg-purple-600 text-white rounded-tr-none"
-                            : "bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-gray-200 rounded-tl-none"
-                          }`}
+                    <div key={msg.id} className={`flex gap-2.5 ${msg.role === "user" ? "flex-row-reverse" : ""}`}>
+                      {/* Avatar */}
+                      {msg.role === "assistant" ? (
+                        <div className="agent-avatar-ring w-7 h-7 shrink-0">
+                          <div className="agent-avatar-inner w-full h-full">
+                            <span className="text-[9px] font-bold text-accent">AI</span>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="w-7 h-7 rounded-full bg-gradient-to-br from-violet-600 to-purple-700 flex items-center justify-center shrink-0 text-white text-[9px] font-bold">
+                          U
+                        </div>
+                      )}
+                      <div className={`max-w-[86%] ${
+                        msg.role === "user"
+                          ? "chat-bubble-user text-sm"
+                          : "chat-bubble-agent text-sm"
+                        }`}
                       >
                         {msg.images && msg.images.length > 0 && (
                           <div className="flex flex-wrap gap-2 mb-2">
                             {msg.images.map((img, idx) => (
-                              <img key={idx} src={img} alt="attached" className="max-w-full h-auto rounded-lg max-h-48 object-contain border border-white/20" />
+                              <img key={idx} src={img} alt="attached" className="max-w-full h-auto rounded-lg max-h-48 object-contain border border-white/10" />
                             ))}
                           </div>
                         )}
-                        <div className="prose prose-sm dark:prose-invert max-w-none space-y-2 break-words">
+                        <div className={`prose prose-sm max-w-none space-y-2 break-words prose-chat ${
+                          msg.role === "user" ? "prose-invert" : "dark:prose-invert"
+                        }`}>
                           <ReactMarkdown
                             remarkPlugins={[remarkGfm]}
                             components={{
@@ -1552,35 +1538,23 @@ Provide actionable, specific suggestions for each issue you find.`;
                           <AgentActivityLog activities={msg.activities} />
                         )}
                         {msg.modifiedFiles && msg.modifiedFiles.length > 0 && (
-                          <div className="mt-2 pt-2 border-t border-gray-200 dark:border-gray-700">
-                            <p className="text-xs text-green-500 dark:text-green-400 font-medium mb-1 flex items-center gap-1">
-                              <svg
-                                xmlns="http://www.w3.org/2000/svg"
-                                width="11"
-                                height="11"
-                                viewBox="0 0 24 24"
-                                fill="none"
-                                stroke="currentColor"
-                                strokeWidth="2.5"
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                              >
-                                <polyline points="20 6 9 17 4 12" />
-                              </svg>
+                          <div className="mt-2 pt-2 border-t border-border-subtle">
+                            <p className="text-[10px] text-emerald-400 font-semibold mb-1.5 flex items-center gap-1">
+                              <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
                               {msg.modifiedFiles.length} file{msg.modifiedFiles.length > 1 ? "s" : ""} written
                             </p>
-                            <div className="flex flex-col gap-0.5 mt-2">
+                            <div className="flex flex-col gap-0.5">
                               {msg.modifiedFiles.map((f) => (
-                                <div key={f} className="flex items-center justify-between text-xs font-mono group/file">
+                                <div key={f} className="flex items-center justify-between text-[10px] font-mono group/file">
                                   <button
                                     onClick={() => handleFileClick(f)}
-                                    className="text-blue-400 hover:text-blue-300 hover:underline truncate"
+                                    className="text-accent hover:text-accent-hover hover:underline truncate"
                                   >
                                     📄 {f}
                                   </button>
-                                  <button 
+                                  <button
                                     onClick={() => setDiffFile(f)}
-                                    className="opacity-0 group-hover/file:opacity-100 text-gray-500 hover:text-gray-300 transition-opacity ml-2 px-1 rounded hover:bg-gray-700/50"
+                                    className="opacity-0 group-hover/file:opacity-100 text-text-muted hover:text-text-secondary transition-opacity ml-2 px-1 py-0.5 rounded hover:bg-surface-hover"
                                     title="View Diff"
                                   >
                                     Diff
@@ -1596,13 +1570,14 @@ Provide actionable, specific suggestions for each issue you find.`;
 
                   {/* Suggested prompts shown only before the conversation has started */}
                   {messages.length === 1 && !isTyping && (
-                    <div className="flex flex-wrap gap-2 pl-11">
+                    <div className="flex flex-wrap gap-2 pl-10 animate-fade-in-up">
                       {SUGGESTED_PROMPTS.map((s) => (
                         <button
                           key={s}
                           onClick={() => sendPrompt(s)}
-                          className="text-xs px-3 py-1.5 rounded-full border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:border-blue-500 hover:text-blue-400 transition-colors"
+                          className="suggestion-chip"
                         >
+                          <Sparkles size={9} className="text-accent opacity-70" />
                           {s}
                         </button>
                       ))}
@@ -1610,36 +1585,38 @@ Provide actionable, specific suggestions for each issue you find.`;
                   )}
 
                   {isTyping && (
-                    <div className="flex gap-3">
-                      <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center shrink-0 text-white text-xs font-bold">
-                        AI
+                    <div className="flex gap-2.5">
+                      <div className="agent-avatar-ring w-7 h-7 shrink-0">
+                        <div className="agent-avatar-inner w-full h-full">
+                          <span className="text-[9px] font-bold text-accent">AI</span>
+                        </div>
                       </div>
-                      <div className="bg-gray-100 dark:bg-gray-800 rounded-2xl rounded-tl-none p-4 text-sm flex items-center gap-1">
-                        <span className="w-1.5 h-1.5 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
-                        <span className="w-1.5 h-1.5 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
-                        <span className="w-1.5 h-1.5 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
+                      <div className="chat-bubble-agent flex items-center gap-1.5">
+                        <span className="w-1.5 h-1.5 bg-accent/60 rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
+                        <span className="w-1.5 h-1.5 bg-accent/60 rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
+                        <span className="w-1.5 h-1.5 bg-accent/60 rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
                       </div>
                     </div>
                   )}
                   <div ref={chatEndRef} />
                 </div>
-                <div className="p-4 border-t border-gray-200 dark:border-gray-800">
+                <div className="px-3 pb-3 border-t border-border-subtle">
                   {chatImages.length > 0 && (
-                    <div className="flex gap-2 mb-2 overflow-x-auto pb-1">
+                    <div className="flex gap-2 mb-2 overflow-x-auto pb-1 pt-2">
                       {chatImages.map((img, idx) => (
                         <div key={idx} className="relative shrink-0">
-                          <img src={img} alt="upload preview" className="h-16 w-16 object-cover rounded-lg border border-gray-700" />
+                          <img src={img} alt="upload preview" className="h-14 w-14 object-cover rounded-lg border border-border-subtle" />
                           <button
                             onClick={() => setChatImages(prev => prev.filter((_, i) => i !== idx))}
-                            className="absolute -top-1.5 -right-1.5 bg-gray-800 hover:bg-gray-700 text-white rounded-full p-0.5 border border-gray-600 transition-colors"
+                            className="absolute -top-1.5 -right-1.5 bg-surface-3 hover:bg-error/20 text-text-muted hover:text-error rounded-full p-0.5 border border-border-subtle transition-colors"
                           >
-                            <X size={12} />
+                            <X size={10} />
                           </button>
                         </div>
                       ))}
                     </div>
                   )}
-                  <div className="relative">
+                  <div className="cmd-bar mt-2">
                     <textarea
                       value={chatInput}
                       onChange={(e) => setChatInput(e.target.value)}
@@ -1661,15 +1638,16 @@ Provide actionable, specific suggestions for each issue you find.`;
                           }
                         }
                       }}
-                      placeholder="Ask the agent to do something... (Paste images)"
-                      className="w-full bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl pl-11 pr-12 py-3 text-sm resize-none h-20 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                      placeholder="Ask the agent to do something…"
+                      className="w-full bg-transparent pl-10 pr-20 py-3 text-sm resize-none h-20 focus:outline-none text-text-primary placeholder:text-text-muted font-sans"
                     />
-                    <label className="absolute left-3 bottom-3 p-1.5 text-gray-400 hover:text-white cursor-pointer transition-colors">
-                      <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
-                      <input 
-                        type="file" 
-                        accept="image/*" 
-                        className="hidden" 
+                    {/* Image upload */}
+                    <label className="absolute left-3 bottom-3 p-1.5 text-text-muted hover:text-text-primary cursor-pointer transition-colors rounded-md hover:bg-surface-hover">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
                         multiple
                         onChange={(e) => {
                           const files = e.target.files;
@@ -1685,52 +1663,57 @@ Provide actionable, specific suggestions for each issue you find.`;
                         }}
                       />
                     </label>
+                    {/* Mic */}
                     <button
                       onClick={toggleRecording}
                       title="Dictate message"
-                      className={`absolute right-12 bottom-3 p-1.5 rounded-lg transition-colors ${
-                        isRecording ? "bg-red-500 text-white animate-pulse" : "text-gray-400 hover:text-white"
+                      className={`absolute right-12 bottom-3 p-1.5 rounded-md transition-all ${
+                        isRecording
+                          ? "bg-red-500/20 text-red-400 animate-pulse"
+                          : "text-text-muted hover:text-text-primary hover:bg-surface-hover"
                       }`}
                     >
-                      <Mic size={16} />
+                      <Mic size={14} />
                     </button>
+                    {/* Send / Stop */}
                     {isTyping ? (
                       <button
                         onClick={() => abortControllerRef.current?.abort()}
                         title="Stop generation"
-                        className="absolute right-3 bottom-3 p-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors flex items-center justify-center"
-                        style={{ width: "32px", height: "32px" }}
+                        className="absolute right-3 bottom-3 p-1.5 bg-red-500/20 hover:bg-red-500/30 text-red-400 rounded-md transition-colors flex items-center justify-center"
+                        style={{ width: "30px", height: "30px" }}
                       >
-                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="6" y="6" width="12" height="12" rx="2" ry="2"/></svg>
+                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="6" y="6" width="12" height="12" rx="2" ry="2"/></svg>
                       </button>
                     ) : (
                       <button
                         onClick={handleSendMessage}
                         disabled={!chatInput.trim() && chatImages.length === 0}
-                        className="absolute right-3 bottom-3 p-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:hover:bg-blue-600 text-white rounded-lg transition-colors flex items-center justify-center"
-                        style={{ width: "32px", height: "32px" }}
+                        className="absolute right-3 bottom-3 p-1.5 bg-accent hover:bg-accent-hover disabled:opacity-30 disabled:cursor-not-allowed text-white rounded-md transition-all flex items-center justify-center hover:shadow-lg hover:shadow-accent/20"
+                        style={{ width: "30px", height: "30px" }}
                       >
-                        <Send size={16} />
+                        <Send size={13} />
                       </button>
                     )}
                   </div>
                 </div>
 
-                {/* Quick Action Prompt Buttons */}
+                {/* Quick Action Chips */}
                 <div className="px-3 pb-3 flex flex-wrap gap-1.5">
                   {[
-                    { label: "✨ Explain file", prompt: selectedFile ? `Explain what the file \`${selectedFile}\` does, its purpose, and key concepts.` : "Explain what this project does." },
-                    { label: "🧪 Add tests", prompt: selectedFile ? `Write comprehensive unit tests for \`${selectedFile}\`. Include edge cases.` : "Write unit tests for the main functionality of this project." },
-                    { label: "📝 Add types", prompt: selectedFile ? `Add TypeScript types and interfaces to \`${selectedFile}\` wherever they are missing.` : "Add TypeScript types to all files that are missing them." },
-                    { label: "⚡ Optimize", prompt: selectedFile ? `Review \`${selectedFile}\` and suggest performance optimizations.` : "Suggest performance optimizations for this project." },
-                    { label: "📚 Add docs", prompt: selectedFile ? `Add JSDoc/docstring comments to all functions and classes in \`${selectedFile}\`.` : "Add documentation comments to the main functions in this project." },
-                  ].map(({ label, prompt }) => (
+                    { label: "Explain", icon: "✨", prompt: selectedFile ? `Explain what the file \`${selectedFile}\` does, its purpose, and key concepts.` : "Explain what this project does." },
+                    { label: "Add tests", icon: "🧪", prompt: selectedFile ? `Write comprehensive unit tests for \`${selectedFile}\`. Include edge cases.` : "Write unit tests for the main functionality of this project." },
+                    { label: "Add types", icon: "📝", prompt: selectedFile ? `Add TypeScript types and interfaces to \`${selectedFile}\` wherever they are missing.` : "Add TypeScript types to all files that are missing them." },
+                    { label: "Optimize", icon: "⚡", prompt: selectedFile ? `Review \`${selectedFile}\` and suggest performance optimizations.` : "Suggest performance optimizations for this project." },
+                    { label: "Add docs", icon: "📚", prompt: selectedFile ? `Add JSDoc/docstring comments to all functions and classes in \`${selectedFile}\`.` : "Add documentation comments to the main functions in this project." },
+                  ].map(({ label, icon, prompt }) => (
                     <button
                       key={label}
                       onClick={() => sendPrompt(prompt)}
                       disabled={isTyping}
-                      className="px-2 py-1 rounded-lg bg-surface-2 hover:bg-surface-hover border border-border-subtle text-[10px] text-text-secondary hover:text-text-primary transition-all disabled:opacity-40 whitespace-nowrap"
+                      className="action-chip"
                     >
+                      <span>{icon}</span>
                       {label}
                     </button>
                   ))}
@@ -1742,7 +1725,7 @@ Provide actionable, specific suggestions for each issue you find.`;
 
             <Panel defaultSize={60} minSize={30}>
               {/* Center Panel: Editor */}
-              <section className="h-full flex flex-col min-w-0 bg-gray-50 dark:bg-[#0e0e0e]">
+              <section className="h-full flex flex-col min-w-0 bg-background">
                 <div className="flex-1 relative overflow-hidden flex">
                   {/* Primary editor pane */}
                   <div
@@ -1974,12 +1957,16 @@ Provide actionable, specific suggestions for each issue you find.`;
                         loading={<div className="p-6 text-gray-500">Loading editor...</div>}
                       />
                     ) : (
-                      <div className="h-full flex flex-col items-center justify-center text-center px-8">
-                        <FileCode size={40} className="text-gray-700 mb-3" />
-                        <p className="text-sm text-gray-500 mb-1">No file open</p>
-                        <p className="text-xs text-gray-600 max-w-xs">
-                          Select a file from the repository panel, or ask the AI agent to create one for you.
-                        </p>
+                      <div className="h-full flex flex-col items-center justify-center text-center px-8 gap-5">
+                        <div className="w-16 h-16 rounded-2xl bg-surface-2 border border-border-subtle flex items-center justify-center animate-float">
+                          <FileCode size={28} className="text-text-muted" />
+                        </div>
+                        <div>
+                          <p className="text-sm font-medium text-text-secondary mb-1">No file open</p>
+                          <p className="text-xs text-text-muted max-w-xs leading-relaxed">
+                            Select a file from the explorer, or ask the AI agent to create one.
+                          </p>
+                        </div>
                       </div>
                     )}
                     {isInlineEditOpen && (
@@ -2139,77 +2126,65 @@ Provide actionable, specific suggestions for each issue you find.`;
               onExpand={() => setIsRepoCollapsed(false)}
             >
               {/* Right Panel: File Explorer + Git */}
-              <aside className="h-full border-l border-border-subtle glass flex flex-col">
+              <aside className="h-full border-l border-border-subtle bg-surface-1 flex flex-col">
                 {/* Tab bar */}
-                <div className="h-10 border-b border-gray-200 dark:border-gray-800 flex items-center shrink-0">
+                <div className="h-9 border-b border-border-subtle flex items-center shrink-0 px-1">
                   <button
                     onClick={() => setRightTab("files")}
-                    className={`flex items-center gap-1.5 px-3 h-full text-xs border-r border-border-subtle transition-colors ${
-                      rightTab === "files"
-                        ? "text-text-primary bg-surface-2"
-                        : "text-text-secondary hover:text-text-primary hover:bg-surface-hover"
-                    }`}
+                    className={`panel-tab ${rightTab === "files" ? "active" : ""}`}
                   >
-                    <Folder size={12} />
+                    <Folder size={11} />
                     Files
                   </button>
                   <button
                     onClick={() => setRightTab("search")}
                     title="Search across files (Ctrl+Shift+F)"
-                    className={`flex items-center gap-1.5 px-3 h-full text-xs border-r border-border-subtle transition-colors ${
-                      rightTab === "search"
-                        ? "text-text-primary bg-surface-2"
-                        : "text-text-secondary hover:text-text-primary hover:bg-surface-hover"
-                    }`}
+                    className={`panel-tab ${rightTab === "search" ? "active" : ""}`}
                   >
-                    <Search size={12} />
+                    <Search size={11} />
                     Search
                   </button>
                   <button
                     onClick={() => setRightTab("git")}
-                    className={`flex items-center gap-1.5 px-3 h-full text-xs transition-colors ${
-                      rightTab === "git"
-                        ? "text-text-primary bg-surface-2"
-                        : "text-text-secondary hover:text-text-primary hover:bg-surface-hover"
-                    }`}
+                    className={`panel-tab ${rightTab === "git" ? "active" : ""}`}
                   >
-                    <GitBranch size={12} />
+                    <GitBranch size={11} />
                     Git
                   </button>
                 </div>
 
                 {rightTab === "files" ? (
                   <>
-                    <div className="flex items-center justify-between px-3 py-1.5 border-b border-gray-800 shrink-0">
-                      <span className="text-xs text-gray-500 font-semibold uppercase tracking-wider">Explorer</span>
-                      <div className="flex items-center gap-1">
+                    <div className="panel-header justify-between">
+                      <span>Explorer</span>
+                      <div className="flex items-center gap-0.5">
                         <button
                           onClick={() => { setFileInputName(""); setFileActionModal({ type: "create_file", path: "" }); }}
-                          className="p-1 text-gray-400 hover:text-white rounded transition-colors"
+                          className="icon-btn"
                           title="New File"
                         >
-                          <FilePlus size={13} />
+                          <FilePlus size={12} />
                         </button>
                         <button
                           onClick={() => { setFileInputName(""); setFileActionModal({ type: "create_folder", path: "" }); }}
-                          className="p-1 text-gray-400 hover:text-white rounded transition-colors"
+                          className="icon-btn"
                           title="New Folder"
                         >
-                          <FolderPlus size={13} />
+                          <FolderPlus size={12} />
                         </button>
                         <button
                           onClick={() => setIsCommandPaletteOpen(true)}
-                          className="p-1 text-gray-400 hover:text-white rounded transition-colors"
+                          className="icon-btn"
                           title="Go to file (Ctrl+P)"
                         >
-                          <Search size={13} />
+                          <Search size={12} />
                         </button>
                         <button
                           onClick={refreshFileTree}
-                          className="p-1 text-gray-400 hover:text-white rounded transition-colors"
+                          className="icon-btn"
                           title="Refresh files"
                         >
-                          <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                             <path d="M21 2v6h-6" />
                             <path d="M3 12a9 9 0 0 1 15-6.7L21 8" />
                             <path d="M3 22v-6h6" />
@@ -2218,20 +2193,22 @@ Provide actionable, specific suggestions for each issue you find.`;
                         </button>
                       </div>
                     </div>
-                    <div className="flex-1 py-2 overflow-y-auto text-sm">
+                    <div className="flex-1 py-1 overflow-y-auto">
                       {isLoadingFiles ? (
                         <div className="flex items-center justify-center h-20">
-                          <Loader2 size={16} className="animate-spin text-gray-400" />
+                          <Loader2 size={14} className="animate-spin text-text-muted" />
                         </div>
                       ) : fileTree.length === 0 ? (
-                        <div className="px-4 py-8 text-center">
-                          <FileCode size={32} className="text-gray-600 mx-auto mb-2" />
-                          <p className="text-xs text-gray-500">No files yet.</p>
+                        <div className="px-4 py-8 text-center flex flex-col items-center gap-2">
+                          <div className="w-10 h-10 rounded-xl bg-surface-2 border border-border-subtle flex items-center justify-center">
+                            <FileCode size={18} className="text-text-muted" />
+                          </div>
+                          <p className="text-xs text-text-muted">No files yet.</p>
                           <button
                             onClick={() => { setFileInputName(""); setFileActionModal({ type: "create_file", path: "" }); }}
-                            className="text-xs text-blue-400 hover:underline mt-2"
+                            className="text-[11px] text-accent hover:text-accent-hover transition-colors"
                           >
-                            Create first file
+                            + Create first file
                           </button>
                         </div>
                       ) : (
@@ -2269,7 +2246,7 @@ Provide actionable, specific suggestions for each issue you find.`;
           </PanelGroup>
         </Panel>
 
-        <PanelResizeHandle className="h-1 bg-gray-200 dark:bg-gray-800 hover:bg-blue-500 cursor-row-resize transition-colors" />
+        <PanelResizeHandle className="resize-handle-v" />
 
         <Panel
           ref={terminalPanelRef}
@@ -2282,26 +2259,22 @@ Provide actionable, specific suggestions for each issue you find.`;
           onExpand={() => setIsTerminalCollapsed(false)}
         >
           {/* Bottom Panel: Terminal/Logs */}
-          <footer className="h-full border-t border-border-subtle bg-surface-1 flex flex-col">
+          <footer className="h-full border-t border-border-subtle bg-surface-1 flex flex-col" style={{ boxShadow: "0 -1px 0 rgba(0,0,0,0.3)" }}>
             {/* Tab bar */}
-            <div className="h-9 border-b border-border-subtle flex items-center px-1 gap-0.5 overflow-x-auto no-scrollbar flex-shrink-0">
+            <div className="h-9 border-b border-border-subtle flex items-center pl-1 pr-2 gap-0 overflow-x-auto no-scrollbar flex-shrink-0">
               {/* Terminal tabs */}
-              <div className="flex items-center gap-0.5 flex-1 min-w-0 overflow-x-auto no-scrollbar">
+              <div className="flex items-center flex-1 min-w-0 overflow-x-auto no-scrollbar h-full">
                 <div
                   onClick={() => setBottomTab("problems")}
-                  className={`group flex items-center gap-1.5 px-2.5 py-1 rounded-md cursor-pointer text-[11px] shrink-0 whitespace-nowrap transition-colors ${
-                    bottomTab === "problems"
-                      ? "bg-surface-2 text-text-primary shadow-sm"
-                      : "text-text-secondary hover:text-text-primary hover:bg-surface-hover"
-                  }`}
+                  className={`panel-tab ${bottomTab === "problems" ? "active" : ""} cursor-pointer`}
                 >
                   <AlertCircle size={10} className={bottomTab === "problems" ? "text-red-400" : "text-text-muted"} />
                   <span>Problems</span>
                   {problems.length > 0 && (
-                    <span className="bg-red-500/20 text-red-400 px-1.5 py-0.5 rounded text-[9px] font-bold">{problems.length}</span>
+                    <span className="animate-badge bg-red-500/20 text-red-400 px-1.5 py-0.5 rounded text-[9px] font-bold ml-0.5">{problems.length}</span>
                   )}
                 </div>
-                <div className="w-px h-4 bg-border-subtle mx-1" />
+                <div className="w-px h-3.5 bg-border-subtle mx-1.5 shrink-0" />
 
                 {terminals.map((t) => {
                   const isRun = t.id.startsWith("run-");
@@ -2315,11 +2288,7 @@ Provide actionable, specific suggestions for each issue you find.`;
                         setEditingTabId(t.id);
                         setEditingTabLabel(t.label);
                       }}
-                      className={`group flex items-center gap-1.5 px-2.5 py-1 rounded-md cursor-pointer text-[11px] shrink-0 whitespace-nowrap transition-colors ${
-                        isActive
-                          ? "bg-surface-2 text-text-primary shadow-sm"
-                          : "text-text-secondary hover:text-text-primary hover:bg-surface-hover"
-                      }`}
+                      className={`panel-tab cursor-pointer shrink-0 group ${isActive ? "active" : ""}`}
                     >
                       {isRun
                         ? <Play size={10} className={isActive ? "text-green-500" : "text-text-muted group-hover:text-green-500"} />
@@ -2452,13 +2421,13 @@ Provide actionable, specific suggestions for each issue you find.`;
                 {/* Git Presets */}
                 <button
                   onClick={() => sendCommandToTerminal("git status")}
-                  className="px-2 py-0.5 rounded bg-surface-3 hover:bg-surface-hover text-text-secondary hover:text-text-primary text-[10px] transition-colors border border-border-subtle shrink-0"
+                  className="quick-run-chip"
                 >
                   git status
                 </button>
                 <button
                   onClick={() => sendCommandToTerminal("git diff")}
-                  className="px-2 py-0.5 rounded bg-surface-3 hover:bg-surface-hover text-text-secondary hover:text-text-primary text-[10px] transition-colors border border-border-subtle shrink-0"
+                  className="quick-run-chip"
                 >
                   git diff
                 </button>
@@ -2468,13 +2437,13 @@ Provide actionable, specific suggestions for each issue you find.`;
                   <>
                     <button
                       onClick={() => sendCommandToTerminal("npm run dev")}
-                      className="px-2 py-0.5 rounded bg-surface-3 hover:bg-surface-hover text-text-secondary hover:text-text-primary text-[10px] transition-colors border border-border-subtle shrink-0"
+                      className="quick-run-chip"
                     >
                       npm run dev
                     </button>
                     <button
                       onClick={() => sendCommandToTerminal("npm install")}
-                      className="px-2 py-0.5 rounded bg-surface-3 hover:bg-surface-hover text-text-secondary hover:text-text-primary text-[10px] transition-colors border border-border-subtle shrink-0"
+                      className="quick-run-chip"
                     >
                       npm install
                     </button>
@@ -2486,13 +2455,13 @@ Provide actionable, specific suggestions for each issue you find.`;
                   <>
                     <button
                       onClick={() => sendCommandToTerminal("python main.py")}
-                      className="px-2 py-0.5 rounded bg-surface-3 hover:bg-surface-hover text-text-secondary hover:text-text-primary text-[10px] transition-colors border border-border-subtle shrink-0"
+                      className="quick-run-chip"
                     >
                       python main.py
                     </button>
                     <button
                       onClick={() => sendCommandToTerminal("pip install -r requirements.txt")}
-                      className="px-2 py-0.5 rounded bg-surface-3 hover:bg-surface-hover text-text-secondary hover:text-text-primary text-[10px] transition-colors border border-border-subtle shrink-0"
+                      className="quick-run-chip"
                     >
                       pip install
                     </button>
@@ -2612,16 +2581,16 @@ Provide actionable, specific suggestions for each issue you find.`;
                 </div>
               ) : terminals.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-full text-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-gray-800/60 flex items-center justify-center">
-                    <Terminal size={20} className="text-gray-500" />
+                  <div className="w-12 h-12 rounded-xl bg-surface-2 border border-border-subtle flex items-center justify-center animate-float">
+                    <Terminal size={22} className="text-text-muted" />
                   </div>
                   <div>
-                    <p className="text-xs text-gray-400 font-medium">No terminal open</p>
-                    <p className="text-[10px] text-gray-600 mt-0.5">Press Ctrl+Shift+` or click + to start one</p>
+                    <p className="text-xs text-text-secondary font-medium">No terminal open</p>
+                    <p className="text-[10px] text-text-muted mt-0.5">Press Ctrl+Shift+` or click + to start one</p>
                   </div>
                   <button
                     onClick={createTerminal}
-                    className="text-[11px] px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-md transition-colors font-medium"
+                    className="text-[11px] px-3 py-1.5 bg-accent hover:bg-accent-hover text-white rounded-md transition-colors font-medium mt-1"
                   >
                     New Terminal
                   </button>
@@ -2875,7 +2844,7 @@ Provide actionable, specific suggestions for each issue you find.`;
       )}
 
       {/* ── Status Bar ─────────────────────────────────────────────────────── */}
-      <div className="h-6 bg-accent flex items-center justify-between px-3 text-[11px] text-white/80 shrink-0 select-none">
+      <div className="h-6 status-bar flex items-center justify-between px-3 text-[11px] text-white/80 shrink-0 select-none">
         {/* Left side */}
         <div className="flex items-center gap-3">
           {gitBranch && (
@@ -2921,9 +2890,9 @@ Provide actionable, specific suggestions for each issue you find.`;
             </>
           )}
           {isTyping && (
-            <span className="flex items-center gap-1 text-purple-200 animate-pulse">
+            <span className="flex items-center gap-1 text-[#a5b4fc] animate-pulse">
               <Brain size={10} />
-              AI thinking...
+              AI thinking…
             </span>
           )}
           {/* Font size controls */}
