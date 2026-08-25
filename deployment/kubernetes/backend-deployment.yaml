@@ -178,6 +178,9 @@ spec:
 
             app: backend
 
+      # FIX: nodeAffinity is now correctly nested inside "affinity",
+      # alongside podAntiAffinity, instead of being a sibling of it.
+      # This was causing: "unknown field spec.template.spec.nodeAffinity"
       affinity:
 
         podAntiAffinity:
@@ -202,19 +205,19 @@ spec:
 
                   - backend
 
-      nodeAffinity:
+        nodeAffinity:
 
-        preferredDuringSchedulingIgnoredDuringExecution:
+          preferredDuringSchedulingIgnoredDuringExecution:
 
-        - weight: 50
+          - weight: 50
 
-          preference:
+            preference:
 
-            matchExpressions:
+              matchExpressions:
 
-            - key: node-role.kubernetes.io/worker
+              - key: node-role.kubernetes.io/worker
 
-              operator: Exists
+                operator: Exists
 
       tolerations:
 
@@ -226,9 +229,15 @@ spec:
 
         effect: "NoSchedule"
 
-      imagePullSecrets:
-
-      - name: docker-registry-secret
+      # FIX: imagePullSecrets removed. It referenced
+      # "docker-registry-secret", which was deleted from secrets.yaml
+      # because it only contained a placeholder value
+      # (BASE64_DOCKER_CONFIG), not real registry credentials.
+      # Not needed for local (kind/Docker Desktop) development using
+      # public images. Re-add this once you have a real registry secret:
+      #
+      # imagePullSecrets:
+      # - name: docker-registry-secret
 
       initContainers:
 
@@ -694,6 +703,9 @@ spec:
 ---
 # ============================================================
 # Pod Monitor
+# NOTE: Requires the Prometheus Operator CRDs installed.
+# kubectl apply will show "no matches for kind PodMonitor" until
+# then. Safe to ignore for local dev; not required for the app to run.
 # ============================================================
 
 apiVersion: monitoring.coreos.com/v1
@@ -836,6 +848,8 @@ spec:
 ---
 # ============================================================
 # Backend Service Monitor (Optional)
+# NOTE: Requires the Prometheus Operator CRDs installed.
+# Safe to ignore for local dev.
 # ============================================================
 
 apiVersion: monitoring.coreos.com/v1

@@ -206,6 +206,21 @@ services:
       - ai-network
 
 # ============================================================
+# Code Executor
+# ============================================================
+
+  code_executor:
+    container_name: code-executor
+    build:
+      context: ../../
+      dockerfile: deployment/docker/Dockerfile.code_executor
+    restart: unless-stopped
+    volumes:
+      - execution_tmp:/tmp/execution
+    networks:
+      - ai-network
+
+# ============================================================
 # Nginx Reverse Proxy
 # ============================================================
 
@@ -250,3 +265,5 @@ volumes:
   redis_data:
 
   qdrant_storage:
+
+  execution_tmp:

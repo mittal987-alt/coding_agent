@@ -1,0 +1,21 @@
+# uploads-pvc.yaml
+# ============================================================
+# PersistentVolumeClaim for backend uploads
+#
+# Referenced by backend-deployment.yaml (volumes.uploads.persistentVolumeClaim.claimName)
+# but was never defined anywhere in the manifests, which is why the
+# backend pods were stuck Pending with:
+#   "persistentvolumeclaim \"uploads-pvc\" not found"
+# ============================================================
+
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: uploads-pvc
+  namespace: ai-platform
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi

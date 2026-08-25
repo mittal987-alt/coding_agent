@@ -68,12 +68,13 @@ HEALTHCHECK \
     --timeout=5s \
     --start-period=20s \
     --retries=3 \
-CMD curl -f http://localhost:3000/api/health || exit 1
+    CMD curl -f http://localhost:3000/api/health || exit 1
 
 ENTRYPOINT ["/sbin/tini","--"]
 
-CMD [
-    "npm",
-    "run",
-    "start"
-]
+# FIX: CMD's JSON array was previously split across multiple lines
+# without line-continuation backslashes, causing Docker to read each
+# item as a new (invalid) instruction:
+#   "unknown instruction: "npm","
+# Putting the whole array on a single line fixes this.
+CMD ["npm", "run", "start"]
