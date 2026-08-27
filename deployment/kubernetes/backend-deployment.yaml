@@ -302,9 +302,9 @@ spec:
 
       - name: backend
 
-        image: your-docker-registry/ai-backend:latest
+        image: ai-backend:latest
 
-        imagePullPolicy: Always
+        imagePullPolicy: IfNotPresent
 
         ports:
 

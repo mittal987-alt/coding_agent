@@ -200,9 +200,9 @@ spec:
 
       - name: frontend
 
-        image: your-docker-registry/ai-frontend:latest
+        image: ai-frontend:latest
 
-        imagePullPolicy: Always
+        imagePullPolicy: IfNotPresent
 
         ports:
 

@@ -1085,7 +1085,8 @@ export default function WorkspacePage() {
       
       let buffer = "";
       let newText = "";
-      let editRange = inlineEditSelection;
+      let editRange: import("monaco-editor").IRange = inlineEditSelection;
+    
 
       while (true) {
         const { done, value } = await reader.read();
@@ -2559,7 +2560,7 @@ Provide actionable, specific suggestions for each issue you find.`;
                                     const range = new monacoRef.current.Range(p.startLineNumber, p.startColumn, p.endLineNumber, p.endColumn);
                                     editorRef.current.setSelection(range);
                                     editorRef.current.revealRangeInCenter(range);
-                                    setInlineEditSelection(range);
+                                    setInlineEditSelection(range as any );
                                     const topPos = editorRef.current.getScrolledVisiblePosition(range.getEndPosition())?.top || 0;
                                     setInlineEditPosition({ top: topPos + 30, left: 10 });
                                     setInlineEditPrompt(`Fix this error: ${p.message}`);
