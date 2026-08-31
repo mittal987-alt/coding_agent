@@ -134,9 +134,13 @@ spec:
 
                   app: redis
 
-      imagePullSecrets:
-
-      - name: docker-registry-secret
+      # NOTE: imagePullSecrets referencing "docker-registry-secret" removed.
+      # That secret was deleted (see backend/frontend deployment fixes) since
+      # it only contained a placeholder value. Not needed for local dev with
+      # public images. Re-add once you have real registry credentials:
+      #
+      # imagePullSecrets:
+      # - name: docker-registry-secret
 
       initContainers:
 
@@ -554,6 +558,9 @@ spec:
 ---
 # ============================================================
 # ServiceMonitor
+# NOTE: Requires the Prometheus Operator CRDs installed.
+# kubectl apply will show "no matches for kind ServiceMonitor" until
+# then. Safe to ignore for local dev; not required for the app to run.
 # ============================================================
 
 apiVersion: monitoring.coreos.com/v1
@@ -590,6 +597,8 @@ spec:
 ---
 # ============================================================
 # Prometheus Alerts
+# NOTE: Requires the Prometheus Operator CRDs installed.
+# Safe to ignore for local dev.
 # ============================================================
 
 apiVersion: monitoring.coreos.com/v1
@@ -654,6 +663,13 @@ spec:
 ---
 # ============================================================
 # Redis Backup CronJob
+# FIX: Original command called `redis-cli --rdb ...` with no `-h` flag,
+# so it defaulted to 127.0.0.1 instead of the redis-service Service DNS
+# name, causing "Connection refused". It also never authenticated even
+# though the Redis server requires REDIS_PASSWORD, which would have
+# caused an auth failure right after fixing the host. Both are fixed
+# below: added REDIS_PASSWORD env (same secret the StatefulSet uses),
+# added -h redis-service, and added -a "$REDIS_PASSWORD" --no-auth-warning.
 # ============================================================
 
 apiVersion: batch/v1
@@ -689,6 +705,18 @@ spec:
 
             image: redis:7.2-alpine
 
+            env:
+
+            - name: REDIS_PASSWORD
+
+              valueFrom:
+
+                secretKeyRef:
+
+                  name: redis-secret
+
+                  key: REDIS_PASSWORD
+
             command:
 
             - sh
@@ -698,6 +726,9 @@ spec:
             - |
 
               redis-cli \
+                -h redis-service \
+                -a "$REDIS_PASSWORD" \
+                --no-auth-warning \
                 --rdb /backup/dump-$(date +%F-%H%M).rdb
 
             volumeMounts:

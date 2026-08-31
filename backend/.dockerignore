@@ -1,0 +1,38 @@
+# Virtual environments (huge, and unnecessary - deps are installed fresh in the image)
+.venv
+venv
+env
+
+# Python cache/build artifacts
+__pycache__
+*.pyc
+*.pyo
+.pytest_cache
+.mypy_cache
+
+# Logs (dev artifacts, shouldn't ship in the image)
+*.log
+create_error.log
+db_error.log
+route_error.log
+
+# Old/unused code
+alembic_old
+
+# Generated runtime data - this should come from a volume, not be baked into the image
+storage/projects
+
+# Local env file - real secrets should come from Kubernetes Secrets, not be baked into the image
+.env
+
+# VCS
+.git
+.gitignore
+
+# Tests (optional - keep if you want to run tests inside CI using this same image)
+tests
+
+# Editor/OS cruft
+.vscode
+.idea
+.DS_Store
