@@ -18,11 +18,10 @@ from abc import ABC, abstractmethod
 import logging
 from typing import Any
 
-from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.language_models.chat_models import BaseChatModel
 
 from app.graph.state import AgentState
-
+from app.core.observability import traced_llm_call
 
 logger = logging.getLogger(__name__)
 
@@ -56,23 +55,19 @@ class BaseAgent(ABC):
         system_prompt: str,
         user_prompt: str,
     ) -> str:
+        """
+        Invoke the LLM with system + user messages.
 
-        messages = [
-
-            SystemMessage(
-                content=system_prompt
-            ),
-
-            HumanMessage(
-                content=user_prompt
-            ),
-        ]
-
-        response = await self.llm.ainvoke(
-            messages
+        Automatically traces to LangSmith when LANGCHAIN_TRACING_V2=true
+        and LANGCHAIN_API_KEY is set. Falls back to direct invocation
+        with zero overhead when tracing is disabled.
+        """
+        return await traced_llm_call(
+            agent_name=self.name,
+            llm=self.llm,
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
         )
-
-        return response.content
 
     def log(
         self,

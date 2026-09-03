@@ -1,6 +1,5 @@
-#
-
 from __future__ import annotations
+
 from app.bootstrap import application
 from fastapi import APIRouter
 from app.terminal.routes import router as terminal_router
@@ -13,6 +12,9 @@ from app.api.routes.models import router as models_router
 from app.api.routes.projects import router as projects_router
 from app.api.routes.tools import router as tools_router
 from app.api.routes.workspace import router as workspace_router
+from app.api.v1.hitl import router as hitl_router
+from app.api.v1.patches import router as patches_router
+from app.api.v1.stream import router as stream_router
 
 api_router = APIRouter()
 
@@ -72,16 +74,21 @@ api_router.include_router(
     prefix="/models",
     tags=["Models"],
 )
-from app.api import api_router
 
-application.app.include_router(
-    api_router,
-    prefix="/api/v1",
+api_router.include_router(
+    hitl_router,
+    prefix="/hitl",
+    tags=["HITL"],
 )
 
-settings = application.resolve("settings")
+api_router.include_router(
+    patches_router,
+    prefix="/patches",
+    tags=["Patches"],
+)
 
-application.app.include_router(
-    api_router,
-    prefix=settings.API_PREFIX,
+api_router.include_router(
+    stream_router,
+    prefix="/stream",
+    tags=["Stream"],
 )

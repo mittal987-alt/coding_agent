@@ -1,5 +1,21 @@
 """
 Graph Edge Registration
+
+Wires all conditional and static edges between LangGraph nodes.
+
+Edge map:
+  supervisor  → [conditional] WorkflowRouter.route()
+  planner     → [conditional] WorkflowRouter.route()
+  repository  → [conditional] WorkflowRouter.route()
+  retriever   → [conditional] WorkflowRouter.route()
+  coder       → [conditional] WorkflowRouter.route()
+  reviewer    → [conditional] WorkflowRouter.route()
+  terminal    → [conditional] WorkflowRouter.route()
+  tester      → [conditional] WorkflowRouter.route()
+  evaluator   → [conditional] WorkflowRouter.route()  ← NEW
+  git         → [conditional] WorkflowRouter.route()
+  memory      → [conditional] WorkflowRouter.route()
+  responder   → END (static)
 """
 
 from __future__ import annotations
@@ -12,158 +28,34 @@ from app.graph.router import WorkflowRouter
 router = WorkflowRouter()
 
 
-def register_edges(builder):
+def register_edges(builder) -> None:
+    """
+    Register all edges on the provided StateGraph builder.
 
-    # -----------------------
-    # Workflow Entry
-    # -----------------------
+    Args:
+        builder: LangGraph StateGraph builder instance.
+    """
 
-    builder.set_entry_point(
-        "supervisor"
-    )
+    # Entry point
+    builder.set_entry_point("supervisor")
 
-    # -----------------------
-    # Supervisor
-    # -----------------------
-
-    builder.add_conditional_edges(
-
+    # All orchestration nodes use the shared WorkflowRouter
+    for node in [
         "supervisor",
-
-        router.route,
-
-    )
-
-    # -----------------------
-    # Planner
-    # -----------------------
-
-    builder.add_conditional_edges(
-
         "planner",
-
-        router.route,
-
-    )
-
-    # -----------------------
-    # Repository
-    # -----------------------
-
-    builder.add_conditional_edges(
-
         "repository",
-
-        router.route,
-
-    )
-
-    # -----------------------
-    # Retriever
-    # -----------------------
-
-    builder.add_conditional_edges(
-
         "retriever",
-
-        router.route,
-
-    )
-
-    # -----------------------
-    # Coder
-    # -----------------------
-
-    builder.add_conditional_edges(
-
         "coder",
-
-        router.route,
-
-    )
-
-    # -----------------------
-    # Reviewer
-    # -----------------------
-
-    builder.add_conditional_edges(
-
         "reviewer",
-
-        router.route,
-
-    )
-
-    # -----------------------
-    # Terminal
-    # -----------------------
-
-    builder.add_conditional_edges(
-
         "terminal",
-
-        router.route,
-
-    )
-
-    # -----------------------
-    # Tester
-    # -----------------------
-
-    builder.add_conditional_edges(
-
         "tester",
-
-        router.route,
-
-    )
-
-    # -----------------------
-    # Git
-    # -----------------------
-
-    builder.add_conditional_edges(
-
+        "evaluator",   # EvaluatorAgent TDD self-correction loop
         "git",
-
-        router.route,
-
-    )
-
-    # -----------------------
-    # Memory
-    # -----------------------
-
-    builder.add_conditional_edges(
-
         "memory",
+    ]:
+        builder.add_conditional_edges(node, router.route)
 
-        router.route,
-
-    )
-
-    # -----------------------
-    # Response
-    # -----------------------
-
-    builder.add_conditional_edges(
-
-        "responder",
-
-        router.route,
-
-    )
-
-    # -----------------------
-    # Finish
-    # -----------------------
-
-    builder.add_edge(
-
-        END,
-
-        END,
-
-    )
+    # Responder is always the terminal node — static edge to END
+    builder.add_edge("responder", END)
 
     return builder

@@ -860,7 +860,7 @@ export default function WorkspacePage() {
         signal: abortControllerRef.current.signal,
         body: JSON.stringify({
           messages: historyToSend,
-          model: project?.llm_model || "mistral-large-latest",
+          model: project?.llm_model || "qwen2.5-coder:1.5b",
           temperature: 0.2,
           project_id: projectId,
         }),
@@ -1073,7 +1073,7 @@ export default function WorkspacePage() {
             { role: "system", content: "You are an inline AI code editor. Return ONLY the raw modified code to replace the user's selection based on their prompt. Do not use markdown blocks, backticks, or conversational text. Just the code." },
             { role: "user", content: `Code:\n${selectedText}\n\nPrompt: ${inlineEditPrompt}` }
           ],
-          model: project?.llm_model || "mistral-large-latest",
+          model: project?.llm_model || "qwen2.5-coder:1.5b",
           temperature: 0.2,
           project_id: projectId,
         }),
@@ -1382,9 +1382,36 @@ Provide actionable, specific suggestions for each issue you find.`;
               <span>Agent Idle</span>
             )}
             <span className="w-px h-3 bg-border-subtle" />
-            <span className="text-accent font-semibold uppercase tracking-widest text-[10px]">
-              {project.llm_model?.split("-")[0] || "Mistral"}
-            </span>
+            <select
+              value={project.llm_model || "qwen2.5-coder:1.5b"}
+              onChange={async (e) => {
+                const newModel = e.target.value;
+                setProject((prev) => (prev ? { ...prev, llm_model: newModel } : null));
+                try {
+                  await ProjectService.updateProject(projectId, { llm_model: newModel });
+                  showToast("success", `AI Model switched to ${newModel}`);
+                } catch {
+                  showToast("error", "Failed to update AI Model");
+                }
+              }}
+              className="bg-surface-2 hover:bg-surface-3 border border-border-subtle text-accent font-medium text-[11px] rounded px-1.5 py-0.5 outline-none cursor-pointer transition-colors"
+              title="Change active AI Model for this workspace"
+            >
+              <optgroup label="🦙 Ollama (Local Free CPU Models)">
+                <option value="qwen2.5-coder:1.5b">Qwen 2.5 Coder 1.5B (Ollama - Default Fast CPU)</option>
+                <option value="qwen2.5-coder:7b">Qwen 2.5 Coder 7B (Ollama - High Quality)</option>
+                <option value="llama3.1:8b">Llama 3.1 8B (Ollama)</option>
+                <option value="deepseek-r1:1.5b">DeepSeek R1 1.5B (Ollama Reasoning)</option>
+              </optgroup>
+              <optgroup label="☁️ Cloud Models">
+                <option value="mistral-small-latest">Mistral Small (Cloud Free API)</option>
+                <option value="mistral-large-latest">Mistral Large (Cloud Paid API)</option>
+                <option value="gpt-4o">OpenAI GPT-4o</option>
+                <option value="gpt-4o-mini">OpenAI GPT-4o Mini</option>
+                <option value="gemini-2.0-flash">Google Gemini 2.0 Flash</option>
+                <option value="claude-3-5-sonnet-20241022">Claude 3.5 Sonnet</option>
+              </optgroup>
+            </select>
           </div>
 
           {/* Layout toggles */}

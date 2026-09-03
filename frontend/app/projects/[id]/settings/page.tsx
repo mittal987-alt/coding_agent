@@ -51,13 +51,16 @@ const SECTIONS: Section[] = [
 ];
 
 const MODEL_OPTIONS = [
-  { value: "mistral-large-latest", label: "Mistral Large (Latest)" },
-  { value: "mistral-large", label: "Mistral Large" },
-  { value: "mistral-small-latest", label: "Mistral Small (Latest)" },
-  { value: "gpt-4o", label: "GPT-4o" },
-  { value: "gpt-4o-mini", label: "GPT-4o Mini" },
-  { value: "claude-sonnet-4-6", label: "Claude Sonnet" },
-  { value: "gemini-1.5-pro", label: "Gemini 1.5 Pro" },
+  { value: "qwen2.5-coder:1.5b", label: "Qwen 2.5 Coder 1.5B (Ollama - Default Fast CPU)" },
+  { value: "qwen2.5-coder:7b", label: "Qwen 2.5 Coder 7B (Ollama - High Accuracy)" },
+  { value: "llama3.1:8b", label: "Llama 3.1 8B (Ollama)" },
+  { value: "deepseek-r1:1.5b", label: "DeepSeek R1 1.5B (Ollama Reasoning)" },
+  { value: "mistral-small-latest", label: "Mistral Small (Cloud API)" },
+  { value: "mistral-large-latest", label: "Mistral Large (Cloud API)" },
+  { value: "gpt-4o", label: "GPT-4o (OpenAI)" },
+  { value: "gpt-4o-mini", label: "GPT-4o Mini (OpenAI)" },
+  { value: "gemini-2.0-flash", label: "Gemini 2.0 Flash (Google)" },
+  { value: "claude-3-5-sonnet-20241022", label: "Claude 3.5 Sonnet (Anthropic)" },
 ];
 
 // ---------------------------------------------------------------------------
@@ -195,7 +198,7 @@ export default function SettingsPage() {
   const [projectName, setProjectName] = useState("");
   const [projectDescription, setProjectDescription] = useState("");
   const [repoUrl, setRepoUrl] = useState("");
-  const [llmModel, setLlmModel] = useState("mistral-large");
+  const [llmModel, setLlmModel] = useState("qwen2.5-coder:1.5b");
   const [projectSaving, setProjectSaving] = useState(false);
   const [projectSaved, setProjectSaved] = useState(false);
 
@@ -227,7 +230,7 @@ export default function SettingsPage() {
         setProjectName(data.name || "");
         setProjectDescription((data as any).description || "");
         setRepoUrl(data.repository_url || "");
-        setLlmModel(data.llm_model || "mistral-large-latest");
+        setLlmModel(data.llm_model || "qwen2.5-coder:1.5b");
       } catch {
         showToast("error", "Failed to load project.");
       } finally {

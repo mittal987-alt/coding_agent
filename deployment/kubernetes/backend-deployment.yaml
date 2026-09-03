@@ -81,6 +81,12 @@ roleRef:
 ---
 # ============================================================
 # Backend Deployment
+# FIX (local dev): replicas reduced from 3 to 1. Running 3 replicas
+# of backend + 3 of frontend + postgres + redis + qdrant + backup
+# CronJobs was consistently overcommitting a single-node laptop
+# cluster's CPU/memory, causing "Insufficient cpu"/"Insufficient
+# memory" scheduling failures. Bump this back up once you have more
+# node capacity or move to a real multi-node cluster.
 # ============================================================
 
 apiVersion: apps/v1
@@ -102,7 +108,7 @@ metadata:
 
 spec:
 
-  replicas: 3
+  replicas: 1
 
   revisionHistoryLimit: 10
 
@@ -594,6 +600,9 @@ spec:
 ---
 # ============================================================
 # Pod Disruption Budget
+# FIX (local dev): minAvailable lowered from 2 to 1, since we only
+# run 1 replica now - minAvailable: 2 would have blocked all
+# voluntary disruptions (e.g. kubectl drain) on a 1-replica deployment.
 # ============================================================
 
 apiVersion: policy/v1
@@ -607,7 +616,7 @@ metadata:
 
 spec:
 
-  minAvailable: 2
+  minAvailable: 1
 
   selector:
 
@@ -618,6 +627,9 @@ spec:
 ---
 # ============================================================
 # Horizontal Pod Autoscaler
+# FIX (local dev): minReplicas 3->1, maxReplicas 15->3. Prevents the
+# HPA from immediately scaling back up and re-triggering the same
+# CPU/memory overcommit we just fixed by lowering "replicas" above.
 # ============================================================
 
 apiVersion: autoscaling/v2
@@ -640,9 +652,9 @@ spec:
 
     name: backend
 
-  minReplicas: 3
+  minReplicas: 1
 
-  maxReplicas: 15
+  maxReplicas: 3
 
   behavior:
 

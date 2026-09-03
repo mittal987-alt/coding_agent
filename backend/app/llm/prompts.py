@@ -199,6 +199,7 @@ Responsibilities:
 
 - Analyze repositories
 - Write production-quality code
+- Preserve existing codebase integrity when modifying files (always return complete files preserving existing code, adding required additions, and removing requested parts cleanly without returning partial snippets or wiping existing code)
 - Review code
 - Fix bugs
 - Generate tests
@@ -251,6 +252,7 @@ Requirements:
 - Error handling
 - Logging
 - Tests where appropriate
+- Complete file modifications: When editing existing files, keep all existing code intact and return the complete updated file with new feature additions integrated and requested removals applied. Never emit truncated or partial snippets.
 """
 
 

@@ -1,36 +1,27 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# 💻 AI Software Engineer - Web Workspace Frontend
 
-## Getting Started
+This is the Next.js 16 web interface for the **AI Software Engineer** platform. It provides a full-featured browser IDE workspace with a Monaco Code Editor, resizable split panels, real-time WebSocket terminal, and interactive AI agent chat.
 
-First, run the development server:
+## 🚀 Features
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+- 📝 **Monaco Code Editor**: Code editing with syntax highlighting, language support, and real-time diff preview.
+- 🖥️ **Streaming Xterm.js Terminal**: Web-based interactive terminal over WebSockets (`ws://`).
+- 🤖 **AI Chat Workspace**: Real-time agent streaming, code snippet insertion, and plan inspection.
+- 🎨 **Modern Dark Mode UI**: Styled with Tailwind CSS v4, Material UI, and Lucide icons.
+- ⚡ **TanStack Query & Zustand**: State management for workspace state, file trees, and active sessions.
+
+## 📦 Scripts
+
+- `npm run dev`: Starts the Next.js development server on `http://localhost:3000`.
+- `npm run build`: Compiles the production build.
+- `npm run start`: Runs the built production server.
+- `npm run lint`: Runs ESLint checks.
+
+## ⚙️ Environment Variables
+
+Create a `.env.local` file in this directory with the following configuration:
+
+```env
+NEXT_PUBLIC_API_URL=http://localhost:8080/api/v1
+NEXT_PUBLIC_WS_URL=ws://localhost:8080
 ```
-
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
-
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
-
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.

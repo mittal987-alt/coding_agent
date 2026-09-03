@@ -28,18 +28,23 @@ When the user asks you to create, modify, or generate code files, you MUST inclu
   "files": [
     {
       "path": "relative/path/to/file.py",
-      "content": "full file content here"
+      "content": "full complete file content here"
     }
   ]
 }
 ```
 
-Rules:
-- If no files need to be written, simply answer in Markdown and do not include the JSON block.
-- File paths must be relative (e.g. "app.py", "src/utils.py"). Never use absolute paths.
-- CRITICAL: When modifying an EXISTING file, you MUST output the ENTIRE, COMPLETE file contents in the `content` field!
-- DO NOT output partial snippets. DO NOT truncate the file. DO NOT use placeholders like "# rest of code here" or "...".
-- If you return a partial file, it will overwrite the user's file and destroy their existing code. You must merge your changes with the existing code and return the FULL file.
+CRITICAL RULES FOR FILE MODIFICATIONS & PRESERVING EXISTING CODE:
+- When modifying an EXISTING file (provided in the workspace context):
+  1. Read the provided file's existing source code in the context carefully.
+  2. Your output `content` MUST BE THE FULL, ENTIRE FILE from top to bottom.
+  3. You MUST PRESERVE ALL existing code, imports, exports, state, hooks, functions, components, types, and styles.
+  4. Merge your new feature additions seamlessly into the existing code at the proper locations.
+  5. Remove ONLY the specific lines that need to be removed or replaced.
+  6. NEVER output truncated files, partial code snippets (e.g., starting mid-function or starting at line 25), or placeholder comments like "// rest of existing code...".
+  7. Your output will REPLACE the existing file on disk. Omitting existing code will DESTROY the user's file. Always output 100% complete files!
+- File paths must be relative (e.g. "app/(app)/ads/page.tsx", "src/utils.py"). Never use absolute paths.
+- If no files need to be modified or written, answer normally in Markdown and do not include the JSON block.
 """
 
 
@@ -71,6 +76,122 @@ def _extract_json_from_text(text: str) -> Optional[dict]:
     return None
 
 
+def _smart_merge_code(existing_content: str, new_content: str) -> str:
+    """
+    Intelligently merge new LLM code output into existing file content if the LLM outputted
+    a partial snippet or truncated fragment.
+    """
+    if not existing_content.strip():
+        return new_content
+
+    existing_lines = existing_content.splitlines(keepends=True)
+    new_lines = new_content.splitlines(keepends=True)
+
+    # Check for header/import loss or abrupt starting fragments
+    existing_imports = [line for line in existing_lines if line.strip().startswith(("import ", "'use client'", '"use client"', "from ", "type ", "interface "))]
+    new_imports = [line for line in new_lines if line.strip().startswith(("import ", "'use client'", '"use client"', "from "))]
+
+    has_header_loss = bool(existing_imports) and not bool(new_imports)
+    starts_abruptly = new_lines and (
+        new_lines[0].strip().startswith("},") or
+        new_lines[0].strip().startswith("];") or
+        new_lines[0].strip().startswith("return") or
+        new_lines[0].strip().startswith("<") or
+        (new_lines[0].strip().startswith("export default function") and len(new_lines) > 1 and new_lines[1].strip().startswith("},"))
+    )
+
+    if has_header_loss or starts_abruptly:
+        # Find header lines in existing_content before the main export/function
+        header_lines = []
+        for line in existing_lines:
+            header_lines.append(line)
+            if "export default" in line or "export function" in line or "export const" in line:
+                break
+        
+        abrupt_match = None
+        if new_lines:
+            first_non_empty = next((l.strip() for l in new_lines if l.strip()), "")
+            for idx, ex_line in enumerate(existing_lines):
+                if first_non_empty and first_non_empty in ex_line:
+                    abrupt_match = idx
+                    break
+        
+        if abrupt_match is not None and abrupt_match > 0:
+            return "".join(existing_lines[:abrupt_match]) + new_content
+        else:
+            missing_header = "".join([l for l in header_lines if l not in new_content])
+            return missing_header + "\n" + new_content
+
+    return new_content
+
+
+def _build_project_context(project_id: str, messages: list) -> str:
+    """Build repository file tree and inject full content of relevant existing files into prompt context."""
+    repo_path = storage.repository_path(project_id)
+    if not repo_path.exists():
+        return ""
+
+    tree = []
+    file_map: dict[str, Path] = {}
+    
+    for root, _, files in os.walk(repo_path):
+        if any(x in root for x in [".git", "node_modules", ".venv", "__pycache__", ".next", "dist", "build"]):
+            continue
+        rel_root = os.path.relpath(root, repo_path)
+        if rel_root == ".":
+            rel_root = ""
+        for file in files:
+            rel_p = os.path.join(rel_root, file).replace("\\", "/").lstrip("/")
+            tree.append(rel_p)
+            file_map[rel_p] = Path(root) / file
+
+    if not tree:
+        return ""
+
+    user_prompt_text = " ".join([
+        m.get("content", "") if isinstance(m.get("content"), str) else ""
+        for m in messages if m.get("role") == "user"
+    ]).lower()
+
+    relevant_files: list[str] = []
+    for rel_p in tree:
+        p_lower = rel_p.lower()
+        basename = os.path.basename(p_lower)
+        name_no_ext = os.path.splitext(basename)[0]
+
+        if rel_p in user_prompt_text or basename in user_prompt_text:
+            relevant_files.append(rel_p)
+        elif any(kw in user_prompt_text for kw in [name_no_ext, "filter", "ad", "page", "card", "grid", "route", "search"]) and len(name_no_ext) > 2:
+            if p_lower.endswith((".tsx", ".ts", ".jsx", ".js", ".py", ".html", ".css", ".json")):
+                relevant_files.append(rel_p)
+
+    selected_files = list(dict.fromkeys(relevant_files))[:15]
+
+    if not selected_files:
+        for rel_p in tree:
+            if rel_p.endswith((".tsx", ".ts", ".jsx", ".js", ".py")) and ("app/" in rel_p or "components/" in rel_p or "src/" in rel_p):
+                selected_files.append(rel_p)
+                if len(selected_files) >= 10:
+                    break
+
+    context_parts = [f"Current Project Files in Workspace:\n" + "\n".join(sorted(tree))]
+
+    if selected_files:
+        context_parts.append("\nEXISTING SOURCE CODE OF RELEVANT WORKSPACE FILES (Use this code to merge changes fully and preserve all existing functionality):")
+        for rel_p in selected_files:
+            file_path = file_map.get(rel_p)
+            if file_path and file_path.exists():
+                try:
+                    size = file_path.stat().st_size
+                    if size < 50000:
+                        content = file_path.read_text(encoding="utf-8", errors="replace")
+                        context_parts.append(f"\n--- FILE: {rel_p} ---\n{content}\n--- END FILE ---")
+                except Exception:
+                    pass
+
+    return "\n".join(context_parts)
+
+
 def _write_project_files(project_id: str, files: list) -> List[str]:
     """Write files to the project repository and return their relative paths."""
     repo_path = storage.repository_path(project_id)
@@ -81,9 +202,16 @@ def _write_project_files(project_id: str, files: list) -> List[str]:
         if not rel_path or not content:
             continue
         target = (repo_path / rel_path).resolve()
-        # Security: ensure the target stays inside the repo
         if not str(target).startswith(str(repo_path.resolve())):
             continue
+
+        if target.exists():
+            try:
+                existing_content = target.read_text(encoding="utf-8", errors="replace")
+                content = _smart_merge_code(existing_content, content)
+            except Exception:
+                pass
+
         file_writer.write(target, content)
         written.append(rel_path)
     return written
@@ -127,9 +255,15 @@ async def chat_endpoint(payload: ChatRequestPayload):
     if not container.llm_manager:
         raise HTTPException(status_code=500, detail="LLM Manager is not initialized")
 
+    system_prompt = CODING_SYSTEM_PROMPT
+    if payload.project_id:
+        proj_ctx = _build_project_context(payload.project_id, payload.messages)
+        if proj_ctx:
+            system_prompt += "\n\n" + proj_ctx
+
     # Build message list with coding system prompt prepended
     all_messages: List[ChatMessage] = [
-        ChatMessage(role=MessageRole("system"), content=CODING_SYSTEM_PROMPT)
+        ChatMessage(role=MessageRole("system"), content=system_prompt)
     ]
     for msg in payload.messages:
         role = msg.get("role", "user")
@@ -197,7 +331,7 @@ async def chat_stream_endpoint(payload: ChatRequestPayload):
     import httpx as _httpx
 
     project_id = payload.project_id
-    model = payload.model or "mistral-large-latest"
+    model = payload.model or "qwen2.5-coder:1.5b"
 
     # Load project API keys
     project_keys: dict = {}
@@ -224,19 +358,7 @@ async def chat_stream_endpoint(payload: ChatRequestPayload):
     # Inject context
     project_context = ""
     if project_id:
-        repo_path = storage.repository_path(project_id)
-        if repo_path.exists():
-            tree = []
-            for root, _, files in os.walk(repo_path):
-                if any(x in root for x in [".git", "node_modules", ".venv", "__pycache__"]):
-                    continue
-                rel_root = os.path.relpath(root, repo_path)
-                if rel_root == ".":
-                    rel_root = ""
-                for file in files:
-                    tree.append(os.path.join(rel_root, file).replace("\\", "/").lstrip("/"))
-            if tree:
-                project_context = f"\n\nCurrent Project Files in Workspace:\n" + "\n".join(sorted(tree))
+        project_context = "\n\n" + _build_project_context(project_id, payload.messages)
 
     # Add the system message at the top
     system_msg = CODING_SYSTEM_PROMPT + project_context
@@ -396,27 +518,100 @@ async def chat_stream_endpoint(payload: ChatRequestPayload):
                                 pass
 
             # ── Ollama (local) ───────────────────────────────────────────────
-            elif "ollama" in model.lower() or ":" in model:
+            elif "ollama" in model.lower() or ":" in model or any(m in model.lower() for m in ["qwen", "llama", "deepseek", "codellama"]):
                 ollama_model = model.replace("ollama/", "").replace("ollama:", "")
-                async with _httpx.AsyncClient(timeout=120) as client:
-                    async with client.stream(
-                        "POST",
-                        "http://localhost:11434/api/chat",
-                        json={"model": ollama_model, "messages": messages, "stream": True},
-                    ) as resp:
-                        if resp.status_code != 200:
-                            err = await resp.aread()
-                            yield _api_err("Ollama", resp.status_code, err)
-                            return
-                        async for line in resp.aiter_lines():
-                            try:
-                                data = json.loads(line)
-                                token = data.get("message", {}).get("content", "")
-                                if token:
-                                    full_response += token
-                                    yield _sse({"type": "token", "content": token})
-                            except Exception:
-                                pass
+                try:
+                    async with _httpx.AsyncClient(timeout=120) as client:
+                        async with client.stream(
+                            "POST",
+                            "http://localhost:11434/api/chat",
+                            json={"model": ollama_model, "messages": messages, "stream": True},
+                        ) as resp:
+                            if resp.status_code != 200:
+                                err = await resp.aread()
+                                yield _api_err("Ollama", resp.status_code, err)
+                                return
+                            async for line in resp.aiter_lines():
+                                try:
+                                    data = json.loads(line)
+                                    token = data.get("message", {}).get("content", "")
+                                    if token:
+                                        full_response += token
+                                        yield _sse({"type": "token", "content": token})
+                                except Exception:
+                                    pass
+                except (_httpx.ConnectError, _httpx.ConnectTimeout):
+                    mistral_key = _get_api_key(project_keys, "mistral", "MISTRAL_API_KEY")
+                    openai_key = _get_api_key(project_keys, "openai", "OPENAI_API_KEY")
+                    gemini_key = _get_api_key(project_keys, "gemini", "GEMINI_API_KEY")
+
+                    if mistral_key:
+                        yield _sse({"type": "activity", "step": "Local Ollama offline. Falling back to Mistral Cloud API…"})
+                        try:
+                            async with _httpx.AsyncClient(timeout=90) as client:
+                                async with client.stream(
+                                    "POST",
+                                    "https://api.mistral.ai/v1/chat/completions",
+                                    headers={"Authorization": f"Bearer {mistral_key}", "Content-Type": "application/json"},
+                                    json={"model": "mistral-small-latest", "messages": messages, "temperature": payload.temperature, "stream": True},
+                                ) as resp:
+                                    if resp.status_code == 200:
+                                        async for line in resp.aiter_lines():
+                                            if not line.startswith("data: "):
+                                                continue
+                                            raw = line[6:]
+                                            if raw.strip() == "[DONE]":
+                                                break
+                                            try:
+                                                chunk = json.loads(raw)
+                                                token = chunk["choices"][0]["delta"].get("content", "")
+                                                if token:
+                                                    full_response += token
+                                                    yield _sse({"type": "token", "content": token})
+                                            except Exception:
+                                                pass
+                                        return
+                        except Exception:
+                            pass
+
+                    elif openai_key:
+                        yield _sse({"type": "activity", "step": "Local Ollama offline. Falling back to OpenAI GPT-4o…"})
+                        try:
+                            async with _httpx.AsyncClient(timeout=90) as client:
+                                async with client.stream(
+                                    "POST",
+                                    "https://api.openai.com/v1/chat/completions",
+                                    headers={"Authorization": f"Bearer {openai_key}", "Content-Type": "application/json"},
+                                    json={"model": "gpt-4o", "messages": messages, "temperature": payload.temperature, "stream": True},
+                                ) as resp:
+                                    if resp.status_code == 200:
+                                        async for line in resp.aiter_lines():
+                                            if not line.startswith("data: "):
+                                                continue
+                                            raw = line[6:]
+                                            if raw.strip() == "[DONE]":
+                                                break
+                                            try:
+                                                chunk = json.loads(raw)
+                                                token = chunk["choices"][0]["delta"].get("content", "")
+                                                if token:
+                                                    full_response += token
+                                                    yield _sse({"type": "token", "content": token})
+                                            except Exception:
+                                                pass
+                                        return
+                        except Exception:
+                            pass
+
+                    yield _sse({
+                        "type": "error",
+                        "message": (
+                            "Could not connect to local Ollama server at http://localhost:11434. "
+                            "Please ensure Ollama is installed and running (`ollama serve`), "
+                            "or change the AI Model in Project Settings to a Cloud API model (e.g. Mistral)."
+                        )
+                    })
+                    return
 
             else:
                 yield _sse({"type": "error", "message": f"Unsupported model: {model}. Please use Mistral, OpenAI, Anthropic, Gemini, or Ollama."})

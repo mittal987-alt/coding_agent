@@ -57,6 +57,8 @@ class Settings(BaseSettings):
 
     MISTRAL_API_KEY: str | None = None
 
+    GROQ_API_KEY: str | None = None
+
     OPENROUTER_API_KEY: str | None = None
 
     OLLAMA_HOST: str = "http://localhost:11434"

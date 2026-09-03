@@ -33,7 +33,7 @@ export const ProjectSettingsModal: React.FC<ProjectSettingsModalProps> = ({
   const [showToken, setShowToken] = useState(false);
 
   // AI
-  const [llmModel, setLlmModel] = useState(project.llm_model || "mistral");
+  const [llmModel, setLlmModel] = useState(project.llm_model || "qwen2.5-coder:1.5b");
   const [systemPrompt, setSystemPrompt] = useState(project.system_prompt || "");
 
   // Env vars
@@ -57,7 +57,7 @@ export const ProjectSettingsModal: React.FC<ProjectSettingsModalProps> = ({
     setRepositoryUrl(project.repository_url || "");
     setDefaultBranch(project.default_branch || "main");
     setGithubToken(project.github_token || "");
-    setLlmModel(project.llm_model || "mistral");
+    setLlmModel(project.llm_model || "qwen2.5-coder:1.5b");
     setSystemPrompt(project.system_prompt || "");
     setError(null);
     setSuccess(null);
@@ -277,12 +277,14 @@ export const ProjectSettingsModal: React.FC<ProjectSettingsModalProps> = ({
               <>
                 <Field label="AI Model">
                   <select value={llmModel} onChange={(e) => setLlmModel(e.target.value)} className={INPUT}>
-                    <option value="mistral">Mistral (Recommended)</option>
-                    <option value="claude-3-opus">Claude 3 Opus</option>
-                    <option value="claude-3-sonnet">Claude 3 Sonnet</option>
-                    <option value="gpt-4o">GPT-4o</option>
-                    <option value="gpt-4-turbo">GPT-4 Turbo</option>
-                    <option value="gemini-pro">Gemini Pro</option>
+                    <option value="mistral-small-latest">Mistral Small (Cloud API - Configured)</option>
+                    <option value="codestral-latest">Mistral Codestral (Cloud API)</option>
+                    <option value="gpt-4o">OpenAI GPT-4o</option>
+                    <option value="gemini-2.0-flash">Google Gemini 2.0 Flash</option>
+                    <option value="qwen2.5-coder:1.5b">Qwen 2.5 Coder 1.5B (Ollama Local)</option>
+                    <option value="qwen2.5-coder:7b">Qwen 2.5 Coder 7B (Ollama Local)</option>
+                    <option value="llama3.1:8b">Llama 3.1 8B (Ollama Local)</option>
+                    <option value="deepseek-r1:1.5b">DeepSeek R1 1.5B (Ollama Local)</option>
                   </select>
                 </Field>
                 <Field label="System Prompt" hint="Custom instructions for the AI agent for this project. Leave blank to use the default.">

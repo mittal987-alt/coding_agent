@@ -95,3 +95,11 @@ async def responder_node(
 ):
 
     return await agent.safe_run(state)
+
+
+async def evaluator_node(
+    state,
+    agent,
+):
+
+    return await agent.safe_run(state)

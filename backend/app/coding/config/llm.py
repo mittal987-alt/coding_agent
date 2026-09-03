@@ -128,14 +128,14 @@ DEFAULT_PROVIDERS: dict[
     ),
     "mistral": ProviderConfig(
         name="mistral",
-        default_model="mistral-large-latest",
+        default_model="mistral-small-latest",
         priority=85,
         supports_embeddings=True,
     ),
     "ollama": ProviderConfig(
         name="ollama",
-        default_model="llama3.1:8b",
-        priority=80,
+        default_model="qwen2.5-coder:1.5b",
+        priority=100,
         supports_embeddings=True,
     ),
     "openrouter": ProviderConfig(

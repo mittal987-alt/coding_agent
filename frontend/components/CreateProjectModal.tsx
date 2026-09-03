@@ -46,7 +46,7 @@ export const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [repositoryUrl, setRepositoryUrl] = useState("");
-  const [llmModel, setLlmModel] = useState("mistral");
+  const [llmModel, setLlmModel] = useState("mistral-small-latest");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -433,10 +433,14 @@ export const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
                 className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none transition-all"
                 disabled={isSubmitting}
               >
-                <option value="mistral">Mistral (Recommended)</option>
-                <option value="claude-3-opus">Claude 3 Opus</option>
-                <option value="claude-3-sonnet">Claude 3 Sonnet</option>
-                <option value="gpt-4o">GPT-4o</option>
+                <option value="mistral-small-latest">Mistral Small (Cloud API - Configured)</option>
+                <option value="codestral-latest">Mistral Codestral (Cloud API)</option>
+                <option value="gpt-4o">OpenAI GPT-4o</option>
+                <option value="gemini-2.0-flash">Google Gemini 2.0 Flash</option>
+                <option value="qwen2.5-coder:1.5b">Qwen 2.5 Coder 1.5B (Ollama Local)</option>
+                <option value="qwen2.5-coder:7b">Qwen 2.5 Coder 7B (Ollama Local)</option>
+                <option value="llama3.1:8b">Llama 3.1 8B (Ollama Local)</option>
+                <option value="deepseek-r1:1.5b">DeepSeek R1 1.5B (Ollama Local)</option>
               </select>
             </div>
           </div>

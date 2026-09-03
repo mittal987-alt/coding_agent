@@ -29,12 +29,18 @@ export default function DiffViewer({
   filePath,
   onClose,
   onAccept,
+  patch,
+  workspaceRoot,
 }: {
   projectId: string;
   filePath: string;
   onClose: () => void;
   /** Called with the accepted (kept) content so the editor can update */
   onAccept?: (filePath: string, content: string) => void;
+  /** Optional AI-generated StructuredPatch — when provided, Accept calls POST /patches/apply */
+  patch?: Record<string, unknown>;
+  /** Workspace root on the server — required when patch is provided */
+  workspaceRoot?: string;
 }) {
   const [original, setOriginal] = useState<string | null>(null);
   const [modified, setModified] = useState<string | null>(null);
@@ -86,23 +92,39 @@ export default function DiffViewer({
     loadDiff();
   }, [projectId, filePath]);
 
-  /** Accept: keep the modified version (already on disk, just notify parent) */
+  /** Accept: apply AI patch via /patches/apply if patch prop is set, otherwise keep existing disk content */
   const handleAccept = useCallback(async () => {
     if (modified === null) return;
     setIsActioning(true);
     try {
-      // File is already on disk, just signal the parent to update its editor model
-      if (onAccept) onAccept(filePath, modified);
-      showToast("success", "Changes accepted ✓");
+      if (patch && workspaceRoot) {
+        // Apply the structured AI patch through the REST API
+        const res = await fetch(`${apiBaseUrl}/patches/apply`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ workspace_root: workspaceRoot, patch, create_backup: true }),
+        });
+        const json = await res.json();
+        if (!json.success) {
+          showToast("error", json.error || "Patch apply failed");
+          return;
+        }
+        if (onAccept) onAccept(filePath, modified);
+        showToast("success", `Patch applied (${json.hunks_applied} hunks) ✓`);
+      } else {
+        // File is already on disk — just signal the parent to update its editor model
+        if (onAccept) onAccept(filePath, modified);
+        showToast("success", "Changes accepted ✓");
+      }
       setTimeout(() => onClose(), 1200);
     } catch {
       showToast("error", "Failed to accept changes");
     } finally {
       setIsActioning(false);
     }
-  }, [modified, filePath, onAccept, onClose]);
+  }, [modified, filePath, patch, workspaceRoot, onAccept, onClose]);
 
-  /** Reject: restore file to git HEAD by calling the revert-file endpoint */
+  /** Reject: restore file to git HEAD, and log rejection via /patches/reject */
   const handleReject = useCallback(async () => {
     if (isNewFile) {
       showToast("error", "Cannot revert — file has no committed version");
@@ -110,6 +132,15 @@ export default function DiffViewer({
     }
     setIsActioning(true);
     try {
+      // Log the rejection for audit trail
+      if (patch) {
+        await fetch(`${apiBaseUrl}/patches/reject`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ reason: "Rejected by developer via DiffViewer" }),
+        }).catch(() => {}); // non-blocking
+      }
+
       const res = await fetch(
         `${apiBaseUrl}/projects/${projectId}/git/revert-file`,
         {
@@ -131,7 +162,7 @@ export default function DiffViewer({
     } finally {
       setIsActioning(false);
     }
-  }, [isNewFile, projectId, filePath, original, onAccept, onClose]);
+  }, [isNewFile, projectId, filePath, patch, original, onAccept, onClose]);
 
   // Keyboard shortcut: Escape to close
   useEffect(() => {
@@ -262,6 +293,7 @@ export default function DiffViewer({
           {hasChanges && (
             <div className="flex items-center gap-1.5">
               <button
+                id={`diff-reject-${filePath.replace(/\//g, "-")}`}
                 onClick={handleReject}
                 disabled={isActioning || isNewFile}
                 title={isNewFile ? "Cannot revert — new file has no committed version" : "Reject changes (restore to git HEAD)"}
@@ -275,9 +307,10 @@ export default function DiffViewer({
                 Reject
               </button>
               <button
+                id={`diff-accept-${filePath.replace(/\//g, "-")}`}
                 onClick={handleAccept}
                 disabled={isActioning}
-                title="Accept changes (keep current version)"
+                title={patch ? "Accept & apply AI patch to disk" : "Accept changes (keep current version)"}
                 className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-green-950/50 hover:bg-green-900/60 border border-green-800/50 text-green-400 hover:text-green-300 disabled:opacity-40 transition-all"
               >
                 {isActioning ? (
@@ -285,7 +318,7 @@ export default function DiffViewer({
                 ) : (
                   <CheckCircle2 size={11} />
                 )}
-                Accept
+                {patch ? "Apply Patch" : "Accept"}
               </button>
             </div>
           )}

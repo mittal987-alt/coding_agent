@@ -1,0 +1,45 @@
+# ============================================================
+# This file must live at the PROJECT ROOT (same level as backend/,
+# frontend/, deployment/) because both Dockerfiles are built with
+# the project root as context:
+#   docker build -f deployment/docker/Dockerfile.backend .
+#   docker build -f deployment/docker/Dockerfile.frontend .
+# A .dockerignore placed inside backend/ or frontend/ has NO EFFECT
+# in this setup - Docker only reads it from the context root.
+# ============================================================
+
+# --- Backend ---
+backend/.venv
+backend/venv
+backend/env
+backend/__pycache__
+backend/*.pyc
+backend/*.pyo
+backend/.pytest_cache
+backend/.mypy_cache
+backend/*.log
+backend/create_error.log
+backend/db_error.log
+backend/route_error.log
+backend/alembic_old
+backend/storage/projects
+backend/.env
+backend/tests
+
+# --- Frontend ---
+frontend/node_modules
+frontend/.next
+frontend/npm-debug.log*
+frontend/.env
+frontend/.env.local
+
+# --- Shared / VCS / editor cruft ---
+.git
+.gitignore
+.vscode
+.idea
+.DS_Store
+
+# --- Other project folders not needed for either image build ---
+deployment/terraform
+deployment/helm
