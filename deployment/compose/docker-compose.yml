@@ -1,16 +1,15 @@
-# docker-compose.yml
 version: "3.9"
 
 name: ai-software-engineer
 
 services:
 
-# ============================================================
-# Backend API
-# ============================================================
-
+  # ============================================================
+  # Backend API
+  # ============================================================
   backend:
     container_name: ai-backend
+
     build:
       context: ../../
       dockerfile: deployment/docker/Dockerfile.backend
@@ -24,23 +23,22 @@ services:
       - "8000:8000"
 
     depends_on:
-      postgres:
-        condition: service_healthy
       redis:
         condition: service_healthy
+
       qdrant:
         condition: service_healthy
 
-    volumes:
-      - ../../backend:/app
+      ollama:
+        condition: service_healthy
 
     networks:
       - ai-network
 
-# ============================================================
-# Worker
-# ============================================================
 
+  # ============================================================
+  # Worker
+  # ============================================================
   worker:
     container_name: ai-worker
 
@@ -57,21 +55,17 @@ services:
       redis:
         condition: service_healthy
 
-      postgres:
+      ollama:
         condition: service_healthy
-
-    volumes:
-      - ../../backend:/app
 
     networks:
       - ai-network
 
-# ============================================================
-# Frontend
-# ============================================================
 
+  # ============================================================
+  # Frontend
+  # ============================================================
   frontend:
-
     container_name: ai-frontend
 
     build:
@@ -90,52 +84,11 @@ services:
     networks:
       - ai-network
 
-# ============================================================
-# PostgreSQL
-# ============================================================
 
-  postgres:
-
-    image: postgres:16
-
-    container_name: postgres
-
-    restart: unless-stopped
-
-    environment:
-
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: ai_engineer
-
-    ports:
-      - "5432:5432"
-
-    volumes:
-
-      - postgres_data:/var/lib/postgresql/data
-
-    healthcheck:
-
-      test:
-        [
-          "CMD-SHELL",
-          "pg_isready -U postgres"
-        ]
-
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-    networks:
-      - ai-network
-
-# ============================================================
-# Redis
-# ============================================================
-
+  # ============================================================
+  # Redis
+  # ============================================================
   redis:
-
     image: redis:7-alpine
 
     container_name: redis
@@ -147,14 +100,10 @@ services:
       - --appendonly
       - "yes"
 
-    ports:
-      - "6379:6379"
-
     volumes:
       - redis_data:/data
 
     healthcheck:
-
       test:
         [
           "CMD",
@@ -163,17 +112,17 @@ services:
         ]
 
       interval: 10s
+      timeout: 5s
       retries: 5
 
     networks:
       - ai-network
 
-# ============================================================
-# Vector Database
-# ============================================================
 
+  # ============================================================
+  # Qdrant
+  # ============================================================
   qdrant:
-
     container_name: qdrant
 
     build:
@@ -182,50 +131,80 @@ services:
 
     restart: unless-stopped
 
-    ports:
-      - "6333:6333"
-      - "6334:6334"
-
     volumes:
       - qdrant_storage:/qdrant/storage
+      - qdrant_snapshots:/qdrant/snapshots
 
     healthcheck:
-
       test:
         [
           "CMD",
           "wget",
+          "--quiet",
           "--spider",
           "http://localhost:6333/healthz"
         ]
 
       interval: 30s
+      timeout: 10s
       retries: 5
 
     networks:
       - ai-network
 
-# ============================================================
-# Code Executor
-# ============================================================
 
-  code_executor:
-    container_name: code-executor
-    build:
-      context: ../../
-      dockerfile: deployment/docker/Dockerfile.code_executor
+  # ============================================================
+  # Ollama
+  # ============================================================
+  ollama:
+    image: ollama/ollama:latest
+
+    container_name: ollama
+
     restart: unless-stopped
+
     volumes:
-      - execution_tmp:/tmp/execution
+      - ollama_data:/root/.ollama
+
     networks:
       - ai-network
 
-# ============================================================
-# Nginx Reverse Proxy
-# ============================================================
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "ollama list >/dev/null 2>&1 || exit 1"
+        ]
 
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+
+
+  # ============================================================
+  # Code Executor
+  # ============================================================
+  code_executor:
+    container_name: code-executor
+
+    build:
+      context: ../../
+      dockerfile: deployment/docker/Dockerfile.code_executor
+
+    restart: unless-stopped
+
+    volumes:
+      - execution_tmp:/tmp/execution
+
+    networks:
+      - ai-network
+
+
+  # ============================================================
+  # Nginx
+  # ============================================================
   nginx:
-
     image: nginx:stable-alpine
 
     container_name: nginx
@@ -233,37 +212,43 @@ services:
     restart: unless-stopped
 
     depends_on:
-      - backend
-      - frontend
+      frontend:
+        condition: service_started
+
+      backend:
+        condition: service_started
 
     ports:
       - "80:80"
 
     volumes:
-      - ../nginx/nginx.conf:/etc/nginx/nginx.conf
+      - ../../nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ../../nginx/conf.d:/etc/nginx/conf.d:ro
 
     networks:
       - ai-network
 
-# ============================================================
-# Networks
-# ============================================================
 
+# ============================================================
+# Network
+# ============================================================
 networks:
 
   ai-network:
     driver: bridge
 
-# ============================================================
-# Volumes
-# ============================================================
 
+# ============================================================
+# Persistent Volumes
+# ============================================================
 volumes:
-
-  postgres_data:
 
   redis_data:
 
   qdrant_storage:
+
+  qdrant_snapshots:
+
+  ollama_data:
 
   execution_tmp:
