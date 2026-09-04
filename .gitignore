@@ -78,4 +78,5 @@ Thumbs.db
 *.pem
 *.tsbuildinfo
 
+backend/storage/
 backend/storage/projects/

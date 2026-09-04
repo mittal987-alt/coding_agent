@@ -77,13 +77,32 @@ Modified Files:
         # ------------------------------------------------------------------
         response = await self.invoke_llm(SUPERVISOR_SYSTEM_PROMPT, summary)
 
+        raw_text = response.strip()
+        if raw_text.startswith("```"):
+            lines = raw_text.splitlines()
+            if lines[0].startswith("```"):
+                lines = lines[1:]
+            if lines and lines[-1].strip() == "```":
+                lines = lines[:-1]
+            raw_text = "\n".join(lines).strip()
+
         try:
-            decision = json.loads(response)
+            decision = json.loads(raw_text)
             state.next_agent = decision.get("next_agent")
-        except (json.JSONDecodeError, KeyError) as exc:
-            logger.warning("Supervisor: failed to parse LLM routing decision: %s", exc)
-            # Fallback: let the WorkflowRouter handle routing via state inspection
-            state.next_agent = None
+        except (json.JSONDecodeError, KeyError):
+            # Fallback: attempt to find first '{' and last '}'
+            start = raw_text.find("{")
+            end = raw_text.rfind("}")
+            if start != -1 and end != -1 and end > start:
+                try:
+                    decision = json.loads(raw_text[start : end + 1])
+                    state.next_agent = decision.get("next_agent")
+                except Exception as exc:
+                    logger.warning("Supervisor: failed to parse LLM routing decision: %s", exc)
+                    state.next_agent = None
+            else:
+                # Fallback: let the WorkflowRouter handle routing via state inspection
+                state.next_agent = None
 
         return state
 

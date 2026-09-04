@@ -47,18 +47,39 @@ class CoderAgent(BaseAgent):
         user_prompt = self._build_user_prompt(state)
 
         # ------------------------------------------------------------------
-        # Invoke LLM
+        # Invoke LLM & parse structured output safely
         # ------------------------------------------------------------------
         response = await self.invoke_llm(system_prompt, user_prompt)
 
+        raw_text = response.strip()
+        if raw_text.startswith("```"):
+            lines = raw_text.splitlines()
+            if lines[0].startswith("```"):
+                lines = lines[1:]
+            if lines and lines[-1].strip() == "```":
+                lines = lines[:-1]
+            raw_text = "\n".join(lines).strip()
+
         try:
-            data = json.loads(response)
+            data = json.loads(raw_text)
             result = CodingResult.model_validate(data)
         except (json.JSONDecodeError, ValueError) as exc:
-            logger.exception("CoderAgent: failed to parse LLM response: %s", exc)
-            # Surface the raw response for debugging
-            state.generated_code = f"[Parse error] {exc}\n\nRaw LLM output:\n{response[:2000]}"
-            return state
+            # Fallback: attempt to find first '{' and last '}'
+            start = raw_text.find("{")
+            end = raw_text.rfind("}")
+            if start != -1 and end != -1 and end > start:
+                try:
+                    data = json.loads(raw_text[start : end + 1])
+                    result = CodingResult.model_validate(data)
+                except Exception as inner_exc:
+                    logger.exception("CoderAgent: failed to parse LLM response after slicing: %s", inner_exc)
+                    state.generated_code = f"[Parse error] {inner_exc}\n\nRaw LLM output:\n{response[:2000]}"
+                    return state
+            else:
+                logger.exception("CoderAgent: failed to parse LLM response: %s", exc)
+                # Surface the raw response for debugging
+                state.generated_code = f"[Parse error] {exc}\n\nRaw LLM output:\n{response[:2000]}"
+                return state
 
         state.generated_code = result.summary
         state.code_edits = result.edits

@@ -112,8 +112,14 @@ async def apply_patch(body: PatchApplyRequest) -> PatchApplyResponse:
             detail=f"Workspace root not found: {body.workspace_root}",
         )
 
-    # Resolve file path (relative patch.file_path against workspace root)
-    file_path = workspace_root / body.patch.file_path
+    # Resolve file path and guard against directory traversal
+    resolved_root = workspace_root.resolve()
+    file_path = (resolved_root / body.patch.file_path.lstrip("/\\")).resolve()
+    if resolved_root != file_path and resolved_root not in file_path.parents:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid file path outside workspace: {body.patch.file_path}",
+        )
     edit_type = body.patch.edit_type
 
     # ------------------------------------------------------------------

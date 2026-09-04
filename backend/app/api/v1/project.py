@@ -1353,3 +1353,91 @@ async def get_project_stats(
         message="Project stats fetched successfully.",
         data=stats,
     )
+
+
+# ---------------------------------------------------------------------------
+# Run Tests & Auto-Fix
+# ---------------------------------------------------------------------------
+
+class RunTestsRequest(_PydanticBase):
+    auto_fix: bool = True
+    test_command: Optional[str] = None   # override auto-detected command
+
+
+@router.post("/{project_id}/run-tests")
+async def run_project_tests(
+    project_id: str,
+    body: RunTestsRequest,
+    service: ProjectService = Depends(get_project_service),
+):
+    """
+    Run the project's test suite inside a subprocess and return a pass/fail summary.
+
+    If auto_fix=True and tests fail, the failure output is surfaced so the
+    frontend can hand it to the Evaluator→Coder TDD loop via the chat endpoint.
+    """
+    import asyncio
+
+    project = service.get_project(project_id)
+    if project is None:
+        raise HTTPException(status_code=404, detail="Project not found.")
+
+    repo_path = storage.repository_path(project_id)
+    project_root = _find_project_root(repo_path)
+
+    # Auto-detect test command
+    if body.test_command:
+        cmd = body.test_command
+    elif (project_root / "pytest.ini").exists() or (project_root / "pyproject.toml").exists() or (project_root / "requirements.txt").exists():
+        cmd = "python -m pytest --tb=short -q"
+    elif (project_root / "package.json").exists():
+        cmd = "npm test -- --watchAll=false"
+    else:
+        cmd = "echo 'No test runner detected'"
+
+    try:
+        proc = await asyncio.create_subprocess_shell(
+            cmd,
+            cwd=str(project_root),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+        )
+        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=120)
+        output = stdout.decode("utf-8", errors="replace")
+        passed = proc.returncode == 0
+    except asyncio.TimeoutError:
+        return {
+            "passed": False,
+            "summary": "Test run timed out after 120 seconds.",
+            "output": "",
+        }
+    except Exception as exc:
+        return {
+            "passed": False,
+            "summary": f"Test runner error: {exc}",
+            "output": "",
+        }
+
+    # Build a short summary
+    lines = output.splitlines()
+    last_lines = "\n".join(lines[-20:]) if len(lines) > 20 else output
+    if passed:
+        summary = "✅ All tests passed."
+    else:
+        # Extract first error headline for the summary
+        for line in lines:
+            if "FAILED" in line or "ERROR" in line or "error" in line.lower():
+                summary = f"❌ Tests failed — {line.strip()[:120]}"
+                break
+        else:
+            summary = f"❌ Tests failed ({proc.returncode})"
+
+    return {
+        "passed": passed,
+        "summary": summary,
+        "output": last_lines,
+        "auto_fix_prompt": (
+            f"The test suite failed. Please analyse the following output and fix the code:\n\n```\n{last_lines}\n```"
+            if not passed and body.auto_fix else None
+        ),
+    }

@@ -1,6 +1,6 @@
 "use client";
 import React, { useState, useEffect } from "react";
-import { X, Loader2, Trash2, Eye, EyeOff, GitBranch, Key, Code2, Bot, Settings2, AlertTriangle } from "lucide-react";
+import { X, Loader2, Trash2, Eye, EyeOff, GitBranch, Key, Code2, Bot, Settings2, AlertTriangle, Cpu, Plus } from "lucide-react";
 import { Project, ProjectService, ProjectUpdate } from "@/services/projects";
 
 interface ProjectSettingsModalProps {
@@ -10,7 +10,7 @@ interface ProjectSettingsModalProps {
   onSaved: (updated: Project) => void;
 }
 
-type Tab = "general" | "git" | "ai" | "env" | "danger";
+type Tab = "general" | "git" | "ai" | "mcp" | "env" | "danger";
 
 export const ProjectSettingsModal: React.FC<ProjectSettingsModalProps> = ({
   isOpen,
@@ -35,6 +35,14 @@ export const ProjectSettingsModal: React.FC<ProjectSettingsModalProps> = ({
   // AI
   const [llmModel, setLlmModel] = useState(project.llm_model || "qwen2.5-coder:1.5b");
   const [systemPrompt, setSystemPrompt] = useState(project.system_prompt || "");
+
+  // MCP Servers
+  const [mcpServers, setMcpServers] = useState<{ name: string; url: string; enabled: boolean }[]>([
+    { name: "PostgreSQL Inspector", url: "http://localhost:8001/sse", enabled: true },
+    { name: "Git PR & Reviewer Tool", url: "http://localhost:8002/sse", enabled: false }
+  ]);
+  const [newMcpName, setNewMcpName] = useState("");
+  const [newMcpUrl, setNewMcpUrl] = useState("");
 
   // Env vars
   const [envVars, setEnvVars] = useState<{ key: string; value: string }[]>([]);
@@ -136,6 +144,7 @@ export const ProjectSettingsModal: React.FC<ProjectSettingsModalProps> = ({
     { id: "general", label: "General", icon: <Settings2 size={14} /> },
     { id: "git", label: "Git & GitHub", icon: <GitBranch size={14} /> },
     { id: "ai", label: "AI Agent", icon: <Bot size={14} /> },
+    { id: "mcp", label: "MCP Tools", icon: <Cpu size={14} /> },
     { id: "env", label: "Environment", icon: <Key size={14} /> },
     { id: "danger", label: "Danger Zone", icon: <AlertTriangle size={14} /> },
   ];
@@ -297,6 +306,84 @@ export const ProjectSettingsModal: React.FC<ProjectSettingsModalProps> = ({
                 </Field>
                 <SaveBtn onClick={handleSave} loading={isSaving} />
               </>
+            )}
+
+            {/* ── MCP TOOLS ── */}
+            {tab === "mcp" && (
+              <div className="flex flex-col gap-4">
+                <div>
+                  <h3 className="text-xs font-semibold text-gray-200 mb-1">Model Context Protocol (MCP) Servers</h3>
+                  <p className="text-[11px] text-gray-500">
+                    Connect custom external tool endpoints (e.g., database schema inspectors, GitHub PR tools) to empower agent capabilities during code generation.
+                  </p>
+                </div>
+
+                <div className="flex flex-col gap-2">
+                  {mcpServers.map((srv, idx) => (
+                    <div key={idx} className="flex items-center justify-between p-2.5 rounded-lg border border-gray-800 bg-gray-900/60">
+                      <div className="flex flex-col">
+                        <span className="text-xs font-medium text-gray-200">{srv.name}</span>
+                        <span className="text-[10px] text-gray-500 font-mono">{srv.url}</span>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <label className="relative inline-flex items-center cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={srv.enabled}
+                            onChange={(e) => {
+                              const updated = [...mcpServers];
+                              updated[idx].enabled = e.target.checked;
+                              setMcpServers(updated);
+                            }}
+                            className="sr-only peer"
+                          />
+                          <div className="w-8 h-4 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-blue-600"></div>
+                        </label>
+                        <button
+                          onClick={() => setMcpServers(mcpServers.filter((_, i) => i !== idx))}
+                          className="text-gray-500 hover:text-red-400 p-1 transition-colors"
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="p-3 rounded-lg border border-gray-800 bg-gray-900/40 flex flex-col gap-2">
+                  <span className="text-[11px] font-medium text-gray-400">Add New MCP Server</span>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      placeholder="Server name (e.g. Linear Issues)"
+                      value={newMcpName}
+                      onChange={(e) => setNewMcpName(e.target.value)}
+                      className={`${INPUT} flex-1`}
+                    />
+                    <input
+                      type="text"
+                      placeholder="SSE or HTTP URL (http://...)"
+                      value={newMcpUrl}
+                      onChange={(e) => setNewMcpUrl(e.target.value)}
+                      className={`${INPUT} flex-1`}
+                    />
+                    <button
+                      onClick={() => {
+                        if (!newMcpName.trim() || !newMcpUrl.trim()) return;
+                        setMcpServers([...mcpServers, { name: newMcpName.trim(), url: newMcpUrl.trim(), enabled: true }]);
+                        setNewMcpName("");
+                        setNewMcpUrl("");
+                      }}
+                      className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium flex items-center gap-1 transition-colors shrink-0"
+                    >
+                      <Plus size={13} />
+                      Add
+                    </button>
+                  </div>
+                </div>
+
+                <SaveBtn onClick={handleSave} loading={isSaving} label="Save MCP Configuration" />
+              </div>
             )}
 
             {/* ── ENV VARS ── */}

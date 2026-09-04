@@ -2,7 +2,7 @@
 
 import React, { useEffect, useRef, useState, useCallback, useLayoutEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, Loader2, MessageSquare, Terminal, FileCode, Play, Folder, Settings, Send, PanelLeft, PanelRight, PanelBottom, Save, GitBranch, Search, FilePlus, FolderPlus, Trash2, Edit3, Brain, Zap, Circle, X, Sun, Moon, BarChart3, Database, Command, History as HistoryIcon, RotateCcw, Sparkles, AlertCircle, CheckCircle2, SplitSquareHorizontal, Mic } from "lucide-react";
+import { ArrowLeft, Loader2, MessageSquare, Terminal, FileCode, Play, Folder, Settings, Send, PanelLeft, PanelRight, PanelBottom, Save, GitBranch, Search, FilePlus, FolderPlus, Trash2, Edit3, Brain, Zap, Circle, X, Sun, Moon, BarChart3, Database, Command, History as HistoryIcon, RotateCcw, Sparkles, AlertCircle, CheckCircle2, SplitSquareHorizontal, Mic, FlaskConical, ShieldCheck, ShieldAlert, ShieldX } from "lucide-react";
 import { ProjectService, Project } from "@/services/projects";
 import { apiBaseUrl } from "@/lib/api";
 import Link from "next/link";
@@ -24,8 +24,8 @@ import {
   PanelResizeHandle,
   ImperativePanelHandle,
 } from "react-resizable-panels";
-import { ProjectSettingsModal } from "@/components/projectSettingModel";
-import { SearchModal } from "@/components/searchModel";
+import { ProjectSettingsModal } from "@/components/ProjectSettingsModal";
+import { SearchModal } from "@/components/SearchModal";
 import { KeyboardShortcutsModal } from "@/components/KeyboardShortcutsModal";
 import GitPanel from "@/components/GitPanel";
 import SearchPanel from "@/components/SearchPanel";
@@ -118,6 +118,14 @@ export default function WorkspacePage() {
   const abortControllerRef = useRef<AbortController | null>(null);
   // Current agent name shown in the navbar pill (parsed from latest activity)
   const [currentAgentLabel, setCurrentAgentLabel] = useState<string | null>(null);
+
+  // Run Tests & Auto-Fix
+  const [isRunningTests, setIsRunningTests] = useState(false);
+  const [testRunResult, setTestRunResult] = useState<{ passed: boolean; summary: string } | null>(null);
+
+  // HITL (Human-in-the-Loop) approval banner
+  const [hitlPending, setHitlPending] = useState<{ workflowId: string; nodeName: string } | null>(null);
+  const [isHitlActioning, setIsHitlActioning] = useState(false);
 
   const [editorLanguage, setEditorLanguage] = useState("markdown");
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
@@ -1467,6 +1475,38 @@ Provide actionable, specific suggestions for each issue you find.`;
             Run
           </button>
 
+          {/* Run Tests & Auto-Fix button */}
+          <button
+            id="run-tests-btn"
+            onClick={async () => {
+              if (!projectId || isRunningTests) return;
+              setIsRunningTests(true);
+              setTestRunResult(null);
+              try {
+                const res = await fetch(`${apiBaseUrl}/projects/${projectId}/run-tests`, {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ auto_fix: true }),
+                });
+                const data = await res.json();
+                setTestRunResult({ passed: data.passed ?? false, summary: data.summary ?? "Tests complete." });
+                if (data.hitl_workflow_id) {
+                  setHitlPending({ workflowId: data.hitl_workflow_id, nodeName: data.hitl_node ?? "terminal" });
+                }
+              } catch {
+                setTestRunResult({ passed: false, summary: "Failed to reach test runner." });
+              } finally {
+                setIsRunningTests(false);
+              }
+            }}
+            disabled={isRunningTests}
+            title="Run test suite and auto-fix failures with the AI agent"
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-[11px] font-medium transition-all border border-emerald-700/50 bg-emerald-900/20 text-emerald-400 hover:bg-emerald-800/30 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            {isRunningTests ? <Loader2 size={12} className="animate-spin" /> : <FlaskConical size={12} />}
+            {isRunningTests ? "Testing…" : "Run Tests"}
+          </button>
+
           <div className="w-px h-5 bg-border-subtle" />
 
           {/* Secondary actions */}
@@ -1490,6 +1530,62 @@ Provide actionable, specific suggestions for each issue you find.`;
           </button>
         </div>
       </header>
+
+      {/* ── HITL Approval Banner ── */}
+      {hitlPending && (
+        <div className="flex items-center gap-3 px-4 py-2.5 bg-amber-900/20 border-b border-amber-700/40 shrink-0 z-20">
+          <ShieldAlert size={15} className="text-amber-400 shrink-0" />
+          <div className="flex-1">
+            <span className="text-xs font-semibold text-amber-300">Agent paused — awaiting approval</span>
+            <span className="ml-2 text-[11px] text-amber-500/80">High-risk action on node: <code className="font-mono">{hitlPending.nodeName}</code></span>
+          </div>
+          <button
+            id="hitl-approve-btn"
+            onClick={async () => {
+              setIsHitlActioning(true);
+              try {
+                await fetch(`${apiBaseUrl}/hitl/${hitlPending.workflowId}/approve`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ comment: "Approved via UI" }) });
+                setHitlPending(null);
+              } finally { setIsHitlActioning(false); }
+            }}
+            disabled={isHitlActioning}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[11px] font-semibold bg-emerald-600 hover:bg-emerald-500 text-white transition-colors disabled:opacity-50"
+          >
+            {isHitlActioning ? <Loader2 size={11} className="animate-spin" /> : <ShieldCheck size={11} />}
+            Approve
+          </button>
+          <button
+            id="hitl-reject-btn"
+            onClick={async () => {
+              setIsHitlActioning(true);
+              try {
+                await fetch(`${apiBaseUrl}/hitl/${hitlPending.workflowId}/reject`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reason: "Rejected via UI" }) });
+                setHitlPending(null);
+              } finally { setIsHitlActioning(false); }
+            }}
+            disabled={isHitlActioning}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[11px] font-semibold bg-red-700/80 hover:bg-red-600 text-white transition-colors disabled:opacity-50"
+          >
+            <ShieldX size={11} />
+            Reject
+          </button>
+        </div>
+      )}
+
+      {/* Test Run Result Toast */}
+      {testRunResult && (
+        <div className={`flex items-center gap-2 px-4 py-2 border-b shrink-0 text-[11px] ${
+          testRunResult.passed
+            ? "bg-emerald-900/15 border-emerald-700/30 text-emerald-300"
+            : "bg-red-900/15 border-red-700/30 text-red-300"
+        }`}>
+          {testRunResult.passed
+            ? <CheckCircle2 size={13} className="text-emerald-400 shrink-0" />
+            : <AlertCircle size={13} className="text-red-400 shrink-0" />}
+          <span className="flex-1">{testRunResult.summary}</span>
+          <button onClick={() => setTestRunResult(null)} className="text-text-muted hover:text-text-primary p-0.5"><X size={12} /></button>
+        </div>
+      )}
 
       {/* Main Workspace Layout */}
       <PanelGroup direction="vertical" className="flex-1 min-h-0">
@@ -1924,10 +2020,37 @@ Provide actionable, specific suggestions for each issue you find.`;
                           smoothScrolling: true,
                           renderWhitespace: "selection",
                           automaticLayout: true,
+                          // Clean up hover / problem popups ("View Problem (Alt+F8)"):
+                          hover: {
+                            enabled: true,
+                            delay: 500,
+                            sticky: true,
+                          },
+                          quickSuggestions: {
+                            other: true,
+                            comments: false,
+                            strings: false,
+                          },
+                          lightbulb: {
+                            enabled: "off",
+                          },
                         }}
                         onMount={(editor, monaco) => {
                           editorRef.current = editor;
                           monacoRef.current = monaco;
+
+                          // Disable client-side TypeScript module resolution errors (e.g. Cannot find module 'mongoose')
+                          // which produce intrusive red squiggles and "View Problem (Alt+F8)" tooltips
+                          try {
+                            monaco.languages.typescript.typescriptDefaults.setDiagnosticsOptions({
+                              noSemanticValidation: true,
+                              noSyntaxValidation: false,
+                            });
+                            monaco.languages.typescript.javascriptDefaults.setDiagnosticsOptions({
+                              noSemanticValidation: true,
+                              noSyntaxValidation: false,
+                            });
+                          } catch (_) {}
 
                           // Track cursor position for status bar
                           editor.onDidChangeCursorPosition((e) => {

@@ -81,17 +81,8 @@ HEALTHCHECK \
     --timeout=10s \
     --start-period=30s \
     --retries=3 \
-CMD python -c "import redis; redis.Redis(host='redis',port=6379).ping()" || exit 1
+CMD python -c "import os, redis; redis.from_url(os.environ.get('CELERY_BROKER_URL', 'redis://redis:6379/0')).ping()" || exit 1
 
 ENTRYPOINT ["/usr/bin/tini","--"]
 
-CMD [
-    "celery",
-    "-A",
-    "app.worker.celery_app",
-    "worker",
-    "--loglevel=INFO",
-    "--concurrency=4",
-    "--prefetch-multiplier=1",
-    "--max-tasks-per-child=100"
-]
+CMD ["celery","-A","app.worker.celery_app","worker","--loglevel=INFO","--concurrency=4","--prefetch-multiplier=1","--max-tasks-per-child=100"]

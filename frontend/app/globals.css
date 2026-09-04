@@ -615,3 +615,36 @@ a, button, input, textarea, select,
   backdrop-filter: blur(4px);
   border: 2px dashed rgba(99, 102, 241, 0.6);
 }
+
+/* ─────────────────────────────────────────────
+   MONACO EDITOR HOVER & PROBLEM WIDGET STYLING
+───────────────────────────────────────────── */
+.monaco-editor .monaco-hover,
+.monaco-editor .monaco-hover-content {
+  background-color: #161622 !important;
+  border: 1px solid rgba(99, 102, 241, 0.25) !important;
+  border-radius: 8px !important;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.6), 0 0 1px 1px rgba(255, 255, 255, 0.05) !important;
+  color: #e2e8f0 !important;
+  backdrop-filter: blur(12px) !important;
+  font-family: var(--font-sans, inherit) !important;
+}
+
+.monaco-editor .monaco-hover .hover-row:not(:first-child) {
+  border-top: 1px solid rgba(255, 255, 255, 0.08) !important;
+}
+
+/* Hide or streamline the redundant "View Problem (Alt+F8)" footer link bar */
+.monaco-editor .marker-widget,
+.monaco-editor .monaco-hover .action-bar {
+  opacity: 0.85;
+}
+
+.monaco-editor .monaco-hover a {
+  color: #818cf8 !important;
+  text-decoration: none !important;
+}
+
+.monaco-editor .monaco-hover a:hover {
+  text-decoration: underline !important;
+}
