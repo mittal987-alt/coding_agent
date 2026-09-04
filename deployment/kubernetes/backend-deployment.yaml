@@ -308,7 +308,7 @@ spec:
 
       - name: backend
 
-        image: ai-backend:latest
+        image: ai-backend:v2
 
         imagePullPolicy: IfNotPresent
 

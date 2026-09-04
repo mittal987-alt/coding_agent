@@ -42,6 +42,17 @@ async def root():
     }
 
 
+@app.get("/health")
+@app.get("/health/ready")
+@app.get("/health/live")
+@app.get("/health/startup")
+async def health_root():
+    return {
+        "status": "ok",
+        "message": "Backend Running",
+    }
+
+
 if __name__ == "__main__":
     uvicorn.run(
         "main:app",

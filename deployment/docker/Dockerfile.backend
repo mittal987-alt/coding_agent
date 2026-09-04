@@ -58,12 +58,11 @@ RUN pip install \
 
 COPY backend .
 
-RUN addgroup --system app && \
-    adduser --system \
-    --ingroup app \
-    app
+RUN addgroup --system --gid 1000 app && \
+    adduser --system --uid 1000 --ingroup app app
 
-RUN chown -R app:app /app
+RUN mkdir -p /app/storage/projects /app/uploads /app/logs /app/cache && \
+    chown -R app:app /app
 
 USER app
 

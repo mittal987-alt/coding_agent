@@ -1389,9 +1389,9 @@ Provide actionable, specific suggestions for each issue you find.`;
                 setProject((prev) => (prev ? { ...prev, llm_model: newModel } : null));
                 try {
                   await ProjectService.updateProject(projectId, { llm_model: newModel });
-                  showToast("success", `AI Model switched to ${newModel}`);
+                  console.log(`AI Model switched to ${newModel}`);
                 } catch {
-                  showToast("error", "Failed to update AI Model");
+                  console.error("Failed to update AI Model");
                 }
               }}
               className="bg-surface-2 hover:bg-surface-3 border border-border-subtle text-accent font-medium text-[11px] rounded px-1.5 py-0.5 outline-none cursor-pointer transition-colors"

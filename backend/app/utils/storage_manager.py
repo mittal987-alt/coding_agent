@@ -16,10 +16,14 @@ class StorageManager:
     PROJECTS_DIR = BASE_DIR / "projects"
 
     def __init__(self):
-        self.PROJECTS_DIR.mkdir(
-            parents=True,
-            exist_ok=True,
-        )
+        try:
+            self.PROJECTS_DIR.mkdir(
+                parents=True,
+                exist_ok=True,
+            )
+        except PermissionError:
+            if not self.PROJECTS_DIR.exists():
+                raise
 
     def project_path(self, project_id: int) -> Path:
         return self.PROJECTS_DIR / str(project_id)

@@ -48,16 +48,14 @@ RUN apk add --no-cache \
     tini \
     curl
 
-COPY --from=builder /app/public ./public
-COPY --from=builder /app/.next ./.next
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/package.json ./package.json
-COPY --from=builder /app/next.config.* ./
+RUN addgroup -S -g 1000 frontend && \
+    adduser -S -u 1000 -G frontend frontend
 
-RUN addgroup -S frontend && \
-    adduser -S frontend -G frontend
-
-RUN chown -R frontend:frontend /app
+COPY --chown=frontend:frontend --from=builder /app/public ./public
+COPY --chown=frontend:frontend --from=builder /app/.next ./.next
+COPY --chown=frontend:frontend --from=builder /app/node_modules ./node_modules
+COPY --chown=frontend:frontend --from=builder /app/package.json ./package.json
+COPY --chown=frontend:frontend --from=builder /app/next.config.* ./
 
 USER frontend
 
